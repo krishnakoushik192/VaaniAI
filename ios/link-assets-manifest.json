@@ -1,0 +1,49 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "src/assets/fonts/AnekDevanagari-Medium.ttf",
+      "sha1": "4c3bd59b5568e8f5f8ce04e124d0cdbd23bdf738"
+    },
+    {
+      "path": "src/assets/fonts/AnekDevanagari-Regular.ttf",
+      "sha1": "82cfeb033cd6300c86fc2119d49653d75494c7fb"
+    },
+    {
+      "path": "src/assets/fonts/AnekTelugu-Medium.ttf",
+      "sha1": "caafc00d914afa2622e4cd43ab1e90cf1d5a7ad5"
+    },
+    {
+      "path": "src/assets/fonts/AnekTelugu-Regular.ttf",
+      "sha1": "44de21f27592ad70c1e09f1054edd13b495fa0b5"
+    },
+    {
+      "path": "src/assets/fonts/InstrumentSerif-Regular.ttf",
+      "sha1": "082088022ba5a4f0d06befbf6677e3b33803c83c"
+    },
+    {
+      "path": "src/assets/fonts/Manrope-Bold.ttf",
+      "sha1": "a2ce9eba3156407cc1194946ee9527f89cb9ffb2"
+    },
+    {
+      "path": "src/assets/fonts/Manrope-ExtraBold.ttf",
+      "sha1": "b304b6eb02d3d2fe4e38910cb1bed8eb6dc0f917"
+    },
+    {
+      "path": "src/assets/fonts/Manrope-Medium.ttf",
+      "sha1": "ff241f166dd8c6dbcc7b7c8494037fb8358f2584"
+    },
+    {
+      "path": "src/assets/fonts/Manrope-Regular.ttf",
+      "sha1": "b51db9724637aa7892d84926399697ca3439fc2a"
+    },
+    {
+      "path": "src/assets/fonts/Manrope-SemiBold.ttf",
+      "sha1": "842b52cae7d844c45f98d354cc31ffec329973d4"
+    },
+    {
+      "path": "src/assets/fonts/README.md",
+      "sha1": "699669f6040700b8fc29af4447b90c477428b7d3"
+    }
+  ]
+}
