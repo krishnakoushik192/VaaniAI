@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vaani mark (shop awning + voice waveform + gold coin), centred in the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.55"
+        android:scaleY="0.55"
+        android:translateX="21"
+        android:translateY="21.3">
+        <path
+            android:fillColor="#1769E0"
+            android:pathData="M20,16H100A6,6 0,0 1,106 22V32A11.5,11.5 0,0 1,83 32A11.5,11.5 0,0 1,60 32A11.5,11.5 0,0 1,37 32A11.5,11.5 0,0 1,14 32V22A6,6 0,0 1,20 16Z" />
+        <path
+            android:fillColor="#151922"
+            android:pathData="M20,70A4.5,4.5 0,0 1,24.5 74.5V81.5A4.5,4.5 0,0 1,15.5 81.5V74.5A4.5,4.5 0,0 1,20 70Z M33,62A4.5,4.5 0,0 1,37.5 66.5V89.5A4.5,4.5 0,0 1,28.5 89.5V66.5A4.5,4.5 0,0 1,33 62Z M46,53A4.5,4.5 0,0 1,50.5 57.5V98.5A4.5,4.5 0,0 1,41.5 98.5V57.5A4.5,4.5 0,0 1,46 53Z M74,53A4.5,4.5 0,0 1,78.5 57.5V98.5A4.5,4.5 0,0 1,69.5 98.5V57.5A4.5,4.5 0,0 1,74 53Z M87,62A4.5,4.5 0,0 1,91.5 66.5V89.5A4.5,4.5 0,0 1,82.5 89.5V66.5A4.5,4.5 0,0 1,87 62Z M100,70A4.5,4.5 0,0 1,104.5 74.5V81.5A4.5,4.5 0,0 1,95.5 81.5V74.5A4.5,4.5 0,0 1,100 70Z" />
+        <path
+            android:fillColor="#A8823F"
+            android:pathData="M50.5,78a9.5,9.5 0,1 0,19 0a9.5,9.5 0,1 0,-19 0Z" />
+    </group>
+</vector>
