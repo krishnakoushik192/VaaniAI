@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Button } from '../components/Button';
+import { ErrorBanner } from '../components/Feedback';
 import { TextField } from '../components/Form';
 import { Icon } from '../components/Icon';
 import { AppHeader, Screen } from '../components/Layout';
 import { Segmented } from '../components/Segmented';
 import { CustomerSheet, FingerprintSheet } from '../components/Sheet';
 import { T } from '../components/Text';
+import { errorText, useT } from '../i18n';
 import { clientId, formatINR, rupees } from '../logic/money';
 import { useRouter } from '../navigation/Router';
 import { initials, useStore } from '../store/AppStore';
@@ -14,6 +16,7 @@ import { radii, space, useTheme } from '../theme';
 
 export function RecordPaymentScreen({ customerId: initialId }: { customerId?: string }) {
   const { colors } = useTheme();
+  const t = useT();
   const router = useRouter();
   const { state, customerById, recordPayment } = useStore();
   const [customerId, setCustomerId] = useState<string | null>(initialId ?? null);
@@ -23,22 +26,39 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
   const [pickOpen, setPickOpen] = useState(!initialId);
   const [fp, setFp] = useState(false);
   const [tried, setTried] = useState(false);
-  const [payId] = useState(() => clientId('pay'));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [payId] = useState(() => clientId('pay')); // same id on retry → recorded once
 
   const value = parseFloat(amount);
   const paise = Number.isFinite(value) ? rupees(value) : 0;
-  const error = !c ? 'Choose a customer' : !(paise > 0) ? 'Enter the amount received' : undefined;
+  const fieldError = !c
+    ? t('rp.errChoose')
+    : c.balance <= 0
+    ? t('rp.errNothingDue')
+    : !(paise > 0)
+    ? t('rp.errAmount')
+    : paise > c.balance
+    ? t('rp.errTooMuch', { amount: formatINR(c.balance) })
+    : undefined;
 
-  const commit = () => {
-    if (!c) {
+  const commit = async () => {
+    if (!c || saving) {
       return;
     }
-    recordPayment(c.id, paise, method, payId);
-    router.resetTo({ name: 'result', kind: 'payment', amount: paise, customerId: c.id, method });
+    setSaving(true);
+    setError(null);
+    try {
+      await recordPayment(c.id, paise, method, payId);
+      router.resetTo({ name: 'result', kind: 'payment', amount: paise, customerId: c.id, method });
+    } catch (e) {
+      setError(errorText(t, e, { 400: 'err.payTooMuch' }));
+      setSaving(false);
+    }
   };
   const save = () => {
     setTried(true);
-    if (error) {
+    if (fieldError) {
       return;
     }
     if (state.settings.fingerprint) {
@@ -49,13 +69,20 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={styles.flex}>
       <Screen
-        header={<AppHeader title="Record payment" te="చెల్లింపు నమోదు" onBack={router.back} />}
-        footer={<Button label={paise > 0 ? `Save payment · ${formatINR(paise)}` : 'Save payment'} onPress={save} />}>
+        header={<AppHeader title={t('rp.title')} onBack={router.back} />}
+        footer={
+          <Button
+            label={saving ? t('common.saving') : paise > 0 ? t('rp.saveAmount', { amount: formatINR(paise) }) : t('rp.save')}
+            onPress={save}
+            disabled={saving}
+          />
+        }>
+        {error ? <ErrorBanner message={error} onRetry={commit} /> : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={c ? `Customer ${c.name}. Change` : 'Choose customer'}
+          accessibilityLabel={c ? t('review.customerA11y', { name: c.name }) : t('rp.choose')}
           onPress={() => setPickOpen(true)}
           style={[styles.customer, { borderColor: tried && !c ? colors.danger : colors.line, backgroundColor: colors.surface }]}>
           <View style={[styles.initial, { backgroundColor: colors.primarySoft }]}>
@@ -68,27 +95,30 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
             )}
           </View>
           <View style={styles.flex}>
-            <T variant="bodyMedium">{c?.name ?? 'Choose customer'}</T>
+            <T variant="bodyMedium">{c?.name ?? t('rp.choose')}</T>
             {c ? (
               <T variant="supporting" color={c.balance > 0 ? colors.warningText : colors.ink2}>
-                {c.balance > 0 ? `Owes ${formatINR(c.balance)}` : 'Nothing due'}
+                {c.balance > 0 ? t('rp.owes', { amount: formatINR(c.balance) }) : t('rp.nothingDue')}
               </T>
             ) : null}
           </View>
           <T variant="bodyMedium" color={colors.primary}>
-            {c ? 'Change' : 'Choose'}
+            {c ? t('common.change') : t('common.choose')}
           </T>
         </Pressable>
+        {tried && !c ? (
+          <T variant="supporting" color={colors.danger}>
+            {t('rp.errChoose')}
+          </T>
+        ) : null}
 
         <TextField
-          label="Amount received"
-          te="అందిన మొత్తం"
+          label={t('rp.amount')}
           prefix="₹"
           keyboardType="decimal-pad"
           value={amount}
           onChangeText={setAmount}
-          error={tried && c ? error : undefined}
-          help={c && paise > c.balance && c.balance > 0 ? `${formatINR(paise - c.balance)} more than due. It will show as advance.` : undefined}
+          error={tried && c ? fieldError : undefined}
         />
 
         {c && c.balance > 0 ? (
@@ -99,7 +129,7 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
                 accessibilityRole="button"
                 onPress={() => setAmount(String(v / 100))}
                 style={[styles.chip, { borderColor: colors.lineStrong, backgroundColor: colors.surface }]}>
-                <T variant="bodyMedium">{v === c.balance ? `Full ${formatINR(v)}` : `Half ${formatINR(v)}`}</T>
+                <T variant="bodyMedium">{v === c.balance ? t('rp.full', { amount: formatINR(v) }) : t('rp.half', { amount: formatINR(v) })}</T>
               </Pressable>
             ))}
           </View>
@@ -107,15 +137,15 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
 
         <View style={{ gap: space[2] }}>
           <T variant="caption" color={colors.ink2}>
-            PAID BY
+            {t('rp.paidBy')}
           </T>
           <Segmented
-            label="Paid by"
+            label={t('rp.paidBy')}
             value={method}
             onChange={setMethod}
             options={[
-              { key: 'cash', label: 'Cash' },
-              { key: 'upi', label: 'Online · UPI' },
+              { key: 'cash', label: t('method.cash') },
+              { key: 'upi', label: t('method.upiLong') },
             ]}
           />
         </View>
@@ -132,13 +162,13 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
       <FingerprintSheet
         visible={fp}
         onClose={() => setFp(false)}
-        amountLabel={`${formatINR(paise)} received`}
+        amountLabel={formatINR(paise)}
         onDone={() => {
           setFp(false);
           commit();
         }}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

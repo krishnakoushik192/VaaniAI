@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Button } from '../components/Button';
+import { ErrorBanner } from '../components/Feedback';
 import { TextField } from '../components/Form';
 import { AppHeader, Screen } from '../components/Layout';
 import { LogoMark } from '../components/Logo';
 import { T } from '../components/Text';
+import { errorText, useT } from '../i18n';
 import { useRouter } from '../navigation/Router';
 import { useStore } from '../store/AppStore';
 import { radii, space, useTheme } from '../theme';
@@ -13,98 +15,97 @@ const UPI_RE = /^[a-zA-Z0-9._-]{2,}@[a-zA-Z]{2,}$/;
 
 export function EditProfileScreen() {
   const { colors, isDark } = useTheme();
+  const t = useT();
   const router = useRouter();
   const { state, updateProfile } = useStore();
-  const p = state.profile;
+  const p = state.shop;
 
-  const [shopName, setShopName] = useState(p.shopName);
-  const [ownerName, setOwnerName] = useState(p.ownerName);
-  const [phone, setPhone] = useState(p.phone);
-  const [upiId, setUpiId] = useState(p.upiId);
+  const [shopName, setShopName] = useState(p?.shopName ?? '');
+  const [ownerName, setOwnerName] = useState(p?.shopkeeperName ?? '');
+  const [upiId, setUpiId] = useState(p?.upiId ?? '');
   const [tried, setTried] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const errors = {
-    shopName: shopName.trim().length < 2 ? 'Enter the shop name' : undefined,
-    ownerName: ownerName.trim().length < 2 ? 'Enter your name' : undefined,
-    phone: phone && !/^\d{10}$/.test(phone) ? 'Use 10 digits' : undefined,
-    upiId: upiId && !UPI_RE.test(upiId.trim()) ? 'Looks like name@bank' : undefined,
+    shopName: shopName.trim().length < 2 ? t('prof.errShop') : undefined,
+    ownerName: ownerName.trim().length < 2 ? t('prof.errName') : undefined,
+    upiId: upiId && !UPI_RE.test(upiId.trim()) ? t('prof.errUpi') : undefined,
   };
   const valid = !Object.values(errors).some(Boolean);
-  const changed = shopName !== p.shopName || ownerName !== p.ownerName || phone !== p.phone || upiId !== p.upiId;
+  const changed = shopName !== (p?.shopName ?? '') || ownerName !== (p?.shopkeeperName ?? '') || upiId !== (p?.upiId ?? '');
 
-  const save = () => {
+  const save = async () => {
     setTried(true);
-    if (!valid) {
+    if (!valid || saving) {
       return;
     }
-    updateProfile({ shopName: shopName.trim(), ownerName: ownerName.trim(), phone, upiId: upiId.trim() });
-    router.back();
+    setSaving(true);
+    setError(null);
+    try {
+      await updateProfile({ shopName: shopName.trim(), shopkeeperName: ownerName.trim(), upiId: upiId.trim() });
+      router.back();
+    } catch (e) {
+      setError(errorText(t, e));
+      setSaving(false);
+    }
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View style={styles.flex}>
       <Screen
-        header={<AppHeader title="Edit profile" te="ప్రొఫైల్ మార్చండి" onBack={router.back} />}
-        footer={<Button label="Save changes" te="మార్పులు సేవ్ చేయండి" onPress={save} disabled={!changed} />}>
+        header={<AppHeader title={t('prof.title')} onBack={router.back} />}
+        footer={<Button label={saving ? t('common.saving') : t('prof.save')} onPress={save} disabled={!changed || saving} />}>
+        {error ? <ErrorBanner message={error} onRetry={save} /> : null}
         <View style={[styles.preview, { backgroundColor: colors.surface, borderColor: colors.line }]}>
           <LogoMark size={40} ground={isDark ? 'dark' : 'light'} />
           <View style={styles.flex}>
-            <T variant="sectionTitle" numberOfLines={1} style={{ fontWeight: '700' }}>
-              {shopName.trim() || 'Shop name'}
+            <T variant="sectionTitle" numberOfLines={1} style={styles.bold}>
+              {shopName.trim() || t('prof.shopName')}
             </T>
             <T variant="supporting" color={colors.ink2} numberOfLines={1}>
-              {ownerName.trim() || 'Your name'}
+              {ownerName.trim() || t('prof.ownerName')}
             </T>
           </View>
         </View>
         <T variant="caption" color={colors.ink2}>
-          PREVIEW · HOME HEADER
+          {t('prof.preview')}
         </T>
 
         <TextField
-          label="Shop name"
-          te="దుకాణం పేరు"
+          label={t('prof.shopName')}
           value={shopName}
           onChangeText={setShopName}
-          maxLength={40}
+          maxLength={60}
           autoCapitalize="words"
           error={tried ? errors.shopName : undefined}
-          help="Shown on Home and on bills"
+          help={t('prof.shopNameHelp')}
         />
         <TextField
-          label="Shopkeeper name"
-          te="యజమాని పేరు"
+          label={t('prof.ownerName')}
           value={ownerName}
           onChangeText={setOwnerName}
-          maxLength={40}
+          maxLength={60}
           autoCapitalize="words"
           error={tried ? errors.ownerName : undefined}
         />
+        <TextField label={t('prof.mobile')} value={p?.mobileNumber ?? ''} onChangeText={() => {}} prefix="+91" editable={false} help={t('prof.mobileHelp')} />
         <TextField
-          label="Phone number"
-          te="ఫోన్ నంబర్"
-          value={phone}
-          onChangeText={v => setPhone(v.replace(/\D/g, ''))}
-          prefix="+91"
-          keyboardType="number-pad"
-          maxLength={10}
-          error={tried ? errors.phone : undefined}
-        />
-        <TextField
-          label="UPI ID"
+          label={t('prof.upiId')}
           value={upiId}
           onChangeText={setUpiId}
           autoCapitalize="none"
           keyboardType="email-address"
           error={tried ? errors.upiId : undefined}
-          help="Customers pay to this ID from the QR"
+          help={t('prof.upiHelp')}
         />
       </Screen>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  bold: { fontWeight: '700' },
   preview: { borderWidth: 1, borderRadius: radii.md, padding: space[4], flexDirection: 'row', alignItems: 'center', gap: space[3], marginBottom: -space[3] },
 });

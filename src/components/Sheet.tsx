@@ -1,14 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Customer } from '../data/sample';
-import { formatINR } from '../logic/money';
+import { Customer } from '../data/types';
+import { errorText, useT } from '../i18n';
+import { formatINR, rupees } from '../logic/money';
 import { customerStatus, initials, useStore } from '../store/AppStore';
 import { radii, size, space, type, useTheme } from '../theme';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import { StatusChip } from './StatusChip';
 import { Bi, T } from './Text';
+import { ErrorBanner } from './Feedback';
+import { TextField } from './Form';
 
 /** 24px top corners, handle, scrim, slide-up. For quick choices only. */
 export function BottomSheet({
@@ -26,10 +29,11 @@ export function BottomSheet({
 }) {
   const { colors, shadows } = useTheme();
   const insets = useSafeAreaInsets();
+  const t = useT();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.wrap}>
-        <Pressable accessibilityLabel="Close" style={[StyleSheet.absoluteFill, styles.scrim]} onPress={onClose} />
+      <KeyboardAvoidingView behavior="padding" style={styles.wrap}>
+        <Pressable accessibilityLabel={t('common.close')} style={[StyleSheet.absoluteFill, styles.scrim]} onPress={onClose} />
         <View
           style={[
             styles.sheet,
@@ -39,18 +43,18 @@ export function BottomSheet({
           <View style={[styles.handle, { backgroundColor: colors.line }]} />
           <View style={styles.titleRow}>
             <Bi en={title} te={te} variant="sectionTitle" style={styles.flex} />
-            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} style={styles.close}>
+            <Pressable accessibilityRole="button" accessibilityLabel={t('common.close')} onPress={onClose} style={styles.close}>
               <Icon name="close" size={22} color={colors.ink} />
             </Pressable>
           </View>
           {children}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-/** Pick a customer, with search and quick add. */
+/** Pick a customer, with search. "Add new customer" opens a small form: name, phone, old dues. */
 export function CustomerSheet({
   visible,
   onClose,
@@ -63,49 +67,172 @@ export function CustomerSheet({
   allowWalkIn?: boolean;
 }) {
   const { colors } = useTheme();
-  const { state, addCustomer } = useStore();
+  const t = useT();
+  const { customers } = useStore();
   const [q, setQ] = useState('');
+  const [adding, setAdding] = useState(false); // showing the new-customer form
   const list = useMemo(
-    () => state.customers.filter(c => c.name.toLowerCase().includes(q.trim().toLowerCase()) || (c.phone ?? '').includes(q.trim())),
-    [state.customers, q],
+    () => customers.filter(c => c.name.toLowerCase().includes(q.trim().toLowerCase()) || (c.phone ?? '').includes(q.trim())),
+    [customers, q],
   );
-  const pick = (id: string | null) => {
+  const close = () => {
     setQ('');
-    onPick(id);
+    setAdding(false);
     onClose();
   };
-  const canAdd = q.trim().length >= 2 && !state.customers.some(c => c.name.toLowerCase() === q.trim().toLowerCase());
+  const pick = (id: string | null) => {
+    onPick(id);
+    close();
+  };
+  const typed = q.trim();
+  const exactMatch = customers.some(c => c.name.toLowerCase() === typed.toLowerCase());
+  const typedName = typed.length >= 2 && !/^\d+$/.test(typed); // a name typed in search (not a phone number)
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Choose customer" te="కస్టమర్‌ను ఎంచుకోండి">
-      <View style={[styles.search, { borderColor: colors.lineStrong, backgroundColor: colors.surface }]}>
-        <Icon name="search" size={20} color={colors.ink2} />
-        <TextInput
-          accessibilityLabel="Search or type a new name"
-          placeholder="Search or type a new name"
-          placeholderTextColor={colors.ink2}
-          value={q}
-          onChangeText={setQ}
-          style={[type.body, styles.flex, { color: colors.ink }]}
-        />
-      </View>
-      <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-        {canAdd ? (
-          <CustomerOption icon="plus" title={`Add "${q.trim()}"`} sub="New customer" onPress={() => pick(addCustomer({ name: q }))} />
-        ) : null}
-        {allowWalkIn && !q ? <CustomerOption icon="user" title="Walk-in customer" sub="No Khata" onPress={() => pick(null)} /> : null}
-        {list.map(c => (
-          <CustomerOptionRow key={c.id} c={c} onPress={() => pick(c.id)} />
-        ))}
-      </ScrollView>
+    <BottomSheet visible={visible} onClose={close} title={adding ? t('add.title') : t('sheet.chooseCustomer')}>
+      {adding ? (
+        <NewCustomerForm initialName={typedName ? typed : ''} initialPhone={/^\d{10}$/.test(typed) ? typed : ''} onSaved={pick} onCancel={() => setAdding(false)} />
+      ) : (
+        <>
+          <View style={[styles.search, { borderColor: colors.lineStrong, backgroundColor: colors.surface }]}>
+            <Icon name="search" size={20} color={colors.ink2} />
+            <TextInput
+              accessibilityLabel={t('sheet.search')}
+              placeholder={t('sheet.search')}
+              placeholderTextColor={colors.ink2}
+              value={q}
+              onChangeText={setQ}
+              style={[type.body, styles.flex, { color: colors.ink }]}
+            />
+          </View>
+          <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+            {!exactMatch ? (
+              <CustomerOption
+                icon="plus"
+                title={typedName ? t('sheet.addNamed', { name: typed }) : t('sheet.addNew')}
+                sub={typedName ? t('sheet.newCustomer') : t('sheet.addNewSub')}
+                onPress={() => setAdding(true)}
+              />
+            ) : null}
+            {allowWalkIn && !q ? <CustomerOption icon="user" title={t('common.walkIn')} sub={t('sheet.noKhata')} onPress={() => pick(null)} /> : null}
+            {list.map(c => (
+              <CustomerOptionRow key={c.id} c={c} onPress={() => pick(c.id)} />
+            ))}
+          </ScrollView>
+        </>
+      )}
     </BottomSheet>
   );
 }
 
-function CustomerOption({ icon, title, sub, onPress }: { icon: 'plus' | 'user'; title: string; sub: string; onPress: () => void }) {
+const PHONE_RE = /^[6-9]\d{9}$/;
+
+/** Name (required), phone (optional), old dues (optional) → creates the customer on the server. */
+function NewCustomerForm({
+  initialName,
+  initialPhone,
+  onSaved,
+  onCancel,
+}: {
+  initialName: string;
+  initialPhone: string;
+  onSaved: (id: string) => void;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  const { customers, addCustomer } = useStore();
+  const [name, setName] = useState(initialName);
+  const [phone, setPhone] = useState(initialPhone);
+  const [due, setDue] = useState('');
+  const [tried, setTried] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dueValue = parseFloat(due);
+  const errors = {
+    name:
+      name.trim().length < 2
+        ? t('add.errName')
+        : customers.some(c => c.name.toLowerCase() === name.trim().toLowerCase())
+        ? t('add.errDupe')
+        : undefined,
+    phone: phone && !PHONE_RE.test(phone) ? t('add.errPhone') : undefined,
+    due: due && !(dueValue >= 0) ? t('add.errAmount') : undefined,
+  };
+  const valid = !Object.values(errors).some(Boolean);
+
+  const save = async () => {
+    setTried(true);
+    if (!valid || saving) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      onSaved(await addCustomer({ name, phone: phone || undefined, openingDue: due ? rupees(dueValue) : 0 }));
+    } catch (e) {
+      setError(errorText(t, e, { 409: 'err.phoneTaken' }));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.formScroll} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+      {error ? <ErrorBanner message={error} onRetry={save} /> : null}
+      <TextField
+        label={`${t('add.name')} *`}
+        value={name}
+        onChangeText={setName}
+        autoFocus={!initialName}
+        autoCapitalize="words"
+        maxLength={40}
+        error={tried ? errors.name : undefined}
+      />
+      <TextField
+        label={t('add.phoneOptional')}
+        value={phone}
+        onChangeText={v => setPhone(v.replace(/\D/g, ''))}
+        prefix="+91"
+        keyboardType="number-pad"
+        maxLength={10}
+        autoFocus={!!initialName && !initialPhone}
+        help={t('add.phoneHelp')}
+        error={tried ? errors.phone : undefined}
+      />
+      <TextField
+        label={t('add.oldDue')}
+        value={due}
+        onChangeText={setDue}
+        prefix="₹"
+        keyboardType="decimal-pad"
+        placeholder="0"
+        help={t('add.oldDueHelp')}
+        error={tried ? errors.due : undefined}
+      />
+      <View style={styles.formButtons}>
+        <Button label={t('common.cancel')} variant="secondary" style={styles.flex} onPress={onCancel} disabled={saving} />
+        <Button label={saving ? t('common.saving') : t('add.save')} style={styles.flex} onPress={save} disabled={saving} />
+      </View>
+    </ScrollView>
+  );
+}
+
+function CustomerOption({
+  icon,
+  title,
+  sub,
+  onPress,
+  disabled,
+}: {
+  icon: 'plus' | 'user';
+  title: string;
+  sub: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   const { colors } = useTheme();
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.opt, pressed && { backgroundColor: colors.surfaceMuted }]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.opt, pressed && { backgroundColor: colors.surfaceMuted }]}>
       <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}>
         <Icon name={icon} size={20} color={colors.primary} />
       </View>
@@ -123,6 +250,7 @@ function CustomerOption({ icon, title, sub, onPress }: { icon: 'plus' | 'user'; 
 
 function CustomerOptionRow({ c, onPress }: { c: Customer; onPress: () => void }) {
   const { colors } = useTheme();
+  const t = useT();
   const st = customerStatus(c);
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.opt, pressed && { backgroundColor: colors.surfaceMuted }]}>
@@ -134,7 +262,7 @@ function CustomerOptionRow({ c, onPress }: { c: Customer; onPress: () => void })
           {c.name}
         </T>
         <T variant="supporting" color={colors.ink2}>
-          {c.phone ?? 'No phone'}
+          {c.phone ?? t('common.noPhone')}
         </T>
       </View>
       {st === 'settled' ? null : (
@@ -152,23 +280,24 @@ function CustomerOptionRow({ c, onPress }: { c: Customer; onPress: () => void })
 /** Demo fingerprint confirm. Real build: react-native-biometrics / expo-local-authentication. */
 export function FingerprintSheet({ visible, onClose, onDone, amountLabel }: { visible: boolean; onClose: () => void; onDone: () => void; amountLabel: string }) {
   const { colors } = useTheme();
+  const t = useT();
   return (
-    <BottomSheet visible={visible} onClose={onClose} title="Confirm with fingerprint" te="వేలిముద్రతో నిర్ధారించండి">
+    <BottomSheet visible={visible} onClose={onClose} title={t('fp.title')}>
       <View style={styles.fp}>
         <T variant="supporting" color={colors.ink2} style={styles.center}>
-          Touch the sensor to confirm {amountLabel}.
+          {t('fp.body', { amount: amountLabel })}
         </T>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Fingerprint sensor. Tap to confirm"
+          accessibilityLabel={t('fp.a11y')}
           onPress={onDone}
           style={({ pressed }) => [styles.sensor, { backgroundColor: pressed ? colors.primary : colors.primarySoft, borderColor: colors.primary }]}>
           {({ pressed }) => <Icon name="fingerprint" size={44} color={pressed ? colors.onPrimary : colors.primary} />}
         </Pressable>
         <T variant="caption" color={colors.ink2}>
-          DEMO · TAP THE SENSOR
+          {t('fp.demo')}
         </T>
-        <Button label="Use PIN instead" variant="ghost" small onPress={onDone} />
+        <Button label={t('fp.usePin')} variant="ghost" small onPress={onDone} />
       </View>
     </BottomSheet>
   );
@@ -179,10 +308,8 @@ export function QuestionSheet({
   visible,
   onClose,
   title,
-  te,
   body,
   yes,
-  yesTe,
   no,
   onYes,
   onNo,
@@ -191,10 +318,8 @@ export function QuestionSheet({
   visible: boolean;
   onClose: () => void;
   title: string;
-  te?: string;
   body?: string;
   yes: string;
-  yesTe?: string;
   no: string;
   onYes: () => void;
   onNo: () => void;
@@ -202,14 +327,14 @@ export function QuestionSheet({
 }) {
   const { colors } = useTheme();
   return (
-    <BottomSheet visible={visible} onClose={onClose} title={title} te={te}>
+    <BottomSheet visible={visible} onClose={onClose} title={title}>
       <View style={styles.q}>
         {body ? (
           <T variant="body" color={colors.ink2}>
             {body}
           </T>
         ) : null}
-        <Button label={yes} te={yesTe} onPress={onYes} />
+        <Button label={yes} onPress={onYes} />
         <Button label={no} variant="secondary" onPress={onNo} disabled={noDisabled} />
       </View>
     </BottomSheet>
@@ -233,4 +358,7 @@ const styles = StyleSheet.create({
   fp: { alignItems: 'center', gap: space[4] },
   sensor: { width: 96, height: 96, borderRadius: radii.pill, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   q: { gap: space[3] },
+  formScroll: { flexGrow: 0 },
+  form: { gap: space[4], paddingBottom: space[2] },
+  formButtons: { flexDirection: 'row', gap: space[3] },
 });

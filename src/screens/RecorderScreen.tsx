@@ -1,138 +1,274 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import type { TurnItem } from '../api/client';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { AppHeader, Screen } from '../components/Layout';
 import { T } from '../components/Text';
 import { Waveform } from '../components/Waveform';
-import { useStore } from '../store/AppStore';
-import { mmss, PROCESSING_STEPS, useVoiceRecorder } from '../logic/useVoiceRecorder';
+import { TFn, useT } from '../i18n';
+import { mmss } from '../logic/dates';
+import { BillItem, clientId, formatINR } from '../logic/money';
+import { useConversation } from '../logic/useConversation';
 import { useRouter } from '../navigation/Router';
+import { BillDraft, useStore } from '../store/AppStore';
 import { radii, size, space, type, useTheme } from '../theme';
+import { unitText } from './BillReviewScreen';
 
+/** Turn the conversation's bill into the app's bill draft (missing values are flagged). */
+function toItems(items: TurnItem[]): BillItem[] {
+  return items.map(i => ({
+    id: clientId('item'),
+    name: i.localName || i.name,
+    qty: i.qty ?? 1,
+    unit: i.unit,
+    rate: i.rate ?? 0,
+    needsCheck: i.qty == null || i.rate == null,
+    note: i.rate == null ? 'priceMissing' : undefined,
+  }));
+}
+
+const qtyText = (t: TFn, i: TurnItem) => (i.qty == null ? t('conv.missingQty') : i.unit === 'pc' ? String(i.qty) : `${i.qty} ${unitText(t, i.unit)}`);
+
+/** Voice bill as a conversation: speak, hear it read back, confirm or correct. */
 export function RecorderScreen() {
   const { colors } = useTheme();
+  const t = useT();
   const router = useRouter();
-  const rec = useVoiceRecorder();
-  const { newDraft } = useStore();
-  const [billNo] = useState(() => newDraft().number);
+  const { state, newDraft, customerById, refresh } = useStore();
+  const [base] = useState(() => newDraft());
+  const conv = useConversation({
+    token: state.token,
+    language: state.language,
+    readBack: state.settings.readBack,
+    whatToChange: t('conv.whatToChange'),
+  });
+  const { phase, bill } = conv;
+  const items = bill?.items ?? [];
+  const asked = bill?.question?.itemId;
 
-  useEffect(() => {
-    if (rec.state === 'done' && rec.result) {
-      router.replace({ name: 'review', draft: newDraft({ ...rec.result }) });
+  const close = () => {
+    conv.cancel();
+    router.back();
+  };
+
+  const yes = () => {
+    if (!bill) {
+      return;
     }
-  }, [rec.state, rec.result, router, newDraft]);
+    conv.cancel();
+    const customerId = conv.customer?.id ?? null;
+    if (customerId && !customerById(customerId)) {
+      refresh(); // the server knows a customer this phone has not loaded yet
+    }
+    const draft: BillDraft = {
+      ...base,
+      customerId,
+      items: toItems(bill.items),
+      discount: bill.discount,
+      method: bill.method ?? undefined,
+      transcript: conv.heard.join(' · '),
+      spokenCustomerName: customerId ? undefined : conv.spokenCustomerName ?? undefined,
+      spokenLanguage: conv.detectedLanguage ?? undefined,
+      spoken: true,
+    };
+    router.replace({ name: 'review', draft });
+  };
 
-  const processing = rec.state === 'processing' || rec.state === 'done';
-  const overline = processing ? 'WORKING ON IT' : rec.state === 'paused' ? 'PAUSED' : 'LISTENING';
+  const typeInstead = () => {
+    conv.cancel();
+    router.replace({ name: 'editItems', draft: { ...base, items: toItems(items), customerId: conv.customer?.id ?? null } });
+  };
+
+  const overline =
+    phase === 'listening'
+      ? t('rec.listening')
+      : phase === 'thinking'
+      ? t('rec.working')
+      : phase === 'speaking'
+      ? t('conv.speaking')
+      : phase === 'confirm'
+      ? t('conv.confirmTitle')
+      : phase === 'error'
+      ? t('rec.problem')
+      : phase === 'starting'
+      ? t('rec.starting')
+      : '';
+
+  const dues = conv.customer?.pastDues ?? 0;
 
   return (
     <Screen
       scroll={false}
       header={
         <AppHeader
-          title="New bill"
-          onBack={router.back}
+          title={t('rec.newBill')}
+          onBack={close}
           close
           right={
-            <T variant="caption" color={colors.ink2} style={{ paddingRight: space[3] }}>
-              BILL {billNo}
+            <T variant="caption" color={colors.ink2} style={styles.billNo}>
+              {t('rec.billNo', { no: base.number })}
             </T>
           }
         />
       }>
       <View style={[styles.panel, { backgroundColor: colors.premium, borderColor: colors.premiumLine }]}>
-        <View style={{ gap: 6 }}>
-          <T variant="caption" color={colors.premiumAccent} style={{ letterSpacing: 1 }}>
-            {overline}
-          </T>
-          <T variant="displaySerif" color={colors.onPremium} style={type.displaySerif}>
-            Say the bill
-          </T>
-          <T variant="teTitle" color={colors.premiumMuted}>
-            వస్తువులు, ధర, పరిమాణం చెప్పండి
-          </T>
-        </View>
-
-        <View style={styles.row8}>
-          <View style={[styles.langChip, { borderColor: colors.premiumLine }]}>
-            <T variant="caption" color={colors.onPremium} style={{ letterSpacing: 0 }}>
-              Telugu + English
+        {/* What the helper is doing / saying */}
+        <View style={styles.top}>
+          {overline ? (
+            <T variant="caption" color={phase === 'error' ? colors.dangerSoft : colors.premiumAccent} style={styles.overline}>
+              {overline}
             </T>
-          </View>
-          <Icon name="language" size={14} color={colors.premiumMuted} />
-          <T variant="caption" color={colors.premiumMuted} style={{ letterSpacing: 0 }}>
-            Auto-detected
-          </T>
-        </View>
-
-        <Waveform active={rec.state === 'recording'} level={processing ? 1 : (rec.seconds % 8) / 8 + 0.3} />
-
-        <T variant="displayAmount" color={colors.onPremium} style={styles.center}>
-          {mmss(rec.seconds)}
-        </T>
-
-        <View style={[styles.transcript, { borderColor: colors.premiumLine }]}>
-          {processing ? (
-            <View style={{ gap: space[3] }} accessibilityLiveRegion="polite">
-              {PROCESSING_STEPS.map((s, i) => {
-                const done = i < rec.step;
-                const now = i === rec.step;
-                return (
-                  <View key={s} style={styles.row8}>
-                    {done ? (
-                      <Icon name="check" size={18} color={colors.premiumAccent} strokeWidth={2.4} />
-                    ) : now ? (
-                      <ActivityIndicator size="small" color={colors.premiumAccent} />
-                    ) : (
-                      <View style={[styles.dot, { borderColor: colors.premiumMuted }]} />
-                    )}
-                    <T variant="body" color={done || now ? colors.onPremium : colors.premiumMuted}>
-                      {s}
-                    </T>
-                  </View>
-                );
-              })}
-            </View>
+          ) : null}
+          {phase === 'confirm' ? (
+            // The list below already shows everything that was read out: just ask.
+            <T variant="screenTitle" color={colors.onPremium}>
+              {t('conv.confirmQ')}
+            </T>
+          ) : conv.replyText ? (
+            <T variant="body" color={colors.onPremium} numberOfLines={4}>
+              {conv.replyText}
+            </T>
           ) : (
             <>
-              <T variant="caption" color={colors.premiumMuted}>
-                TRANSCRIPT
+              <T variant="displaySerif" color={colors.onPremium} style={type.displaySerif}>
+                {t('rec.sayTheBill')}
               </T>
-              <T variant="body" color={colors.onPremium}>
-                {rec.transcript || '…'}
+              <T variant="body" color={colors.premiumMuted}>
+                {t('rec.hint')}
               </T>
             </>
           )}
         </View>
 
-        <View style={styles.controls}>
-          <Button
-            label="Type instead"
-            variant="onPremium"
-            style={styles.flex}
-            onPress={() => router.replace({ name: 'editItems', draft: newDraft() })}
-            disabled={processing}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Stop and review bill"
-            disabled={processing}
-            onPress={rec.stop}
-            style={({ pressed }) => [
-              styles.mic,
-              { backgroundColor: pressed ? colors.primaryPressed : colors.primary, borderColor: 'rgba(201,169,110,0.3)', opacity: processing ? 0.5 : 1 },
-            ]}>
-            <View style={styles.stop} />
-          </Pressable>
-          <Button
-            label={rec.state === 'paused' ? 'Resume' : 'Pause'}
-            variant="onPremium"
-            style={styles.flex}
-            onPress={rec.state === 'paused' ? rec.resume : rec.pause}
-            disabled={processing}
-          />
-        </View>
+        {/* The bill as it is being written */}
+        <ScrollView style={[styles.bill, { borderColor: colors.premiumLine }]} contentContainerStyle={styles.billContent}>
+          {conv.customer ? (
+            <View style={styles.customer}>
+              <Icon name="user" size={18} color={colors.premiumAccent} />
+              <View style={styles.flex}>
+                <T variant="bodyMedium" color={colors.onPremium}>
+                  {conv.customer.name}
+                </T>
+                {dues > 0 ? (
+                  <T variant="supporting" color={colors.premiumAccent}>
+                    {t('conv.oldDue', { amount: formatINR(dues) })}
+                    {bill?.method === 'khata' ? ` · ${t('conv.afterBill', { amount: formatINR(dues + conv.totals.total) })}` : ''}
+                  </T>
+                ) : null}
+              </View>
+            </View>
+          ) : conv.spokenCustomerName ? (
+            <T variant="supporting" color={colors.premiumAccent}>
+              {t('review.customerNotFound', { name: conv.spokenCustomerName })}
+            </T>
+          ) : null}
+
+          {items.length === 0 ? (
+            <T variant="body" color={colors.premiumMuted}>
+              {phase === 'listening' || phase === 'starting' ? t('rec.example') : t('conv.empty')}
+            </T>
+          ) : (
+            items.map(i => {
+              const missing = i.qty == null || i.rate == null;
+              const line = i.qty != null && i.rate != null ? formatINR(Math.round(i.qty * i.rate)) : '—';
+              return (
+                <View
+                  key={i.id}
+                  style={[styles.item, { borderColor: i.id === asked ? colors.premiumAccent : colors.premiumLine }, i.id === asked && styles.asked]}>
+                  <View style={styles.flex}>
+                    <T variant="bodyMedium" color={colors.onPremium} numberOfLines={1}>
+                      {i.localName || i.name}
+                    </T>
+                    <T variant="supporting" color={missing ? colors.premiumAccent : colors.premiumMuted}>
+                      {qtyText(t, i)} × {i.rate == null ? t('conv.missingRate') : formatINR(i.rate)}
+                    </T>
+                  </View>
+                  <T variant="button" color={colors.onPremium} style={styles.num}>
+                    {line}
+                  </T>
+                </View>
+              );
+            })
+          )}
+
+          {items.length ? (
+            <View style={[styles.totalRow, { borderTopColor: colors.premiumLine }]}>
+              <T variant="bodyMedium" color={colors.premiumMuted} style={styles.flex}>
+                {t('review.total')}
+              </T>
+              <T variant="displayAmount" color={colors.onPremium}>
+                {formatINR(conv.totals.total)}
+              </T>
+            </View>
+          ) : null}
+
+          {conv.heard.length ? (
+            <T variant="supporting" color={colors.premiumMuted} numberOfLines={3}>
+              {t('conv.youSaid')}: “{conv.heard[conv.heard.length - 1]}”
+            </T>
+          ) : null}
+        </ScrollView>
+
+        {/* Controls for the current step */}
+        {phase === 'confirm' ? (
+          <View style={styles.row}>
+            <Button label={t('conv.no')} variant="onPremium" style={styles.flex} onPress={conv.no} />
+            <Button label={t('conv.yes')} icon="check" style={styles.flex} onPress={yes} />
+          </View>
+        ) : phase === 'thinking' ? (
+          <View style={styles.status}>
+            <ActivityIndicator color={colors.premiumAccent} />
+            <T variant="bodyMedium" color={colors.onPremium}>
+              {t('conv.thinking')}
+            </T>
+          </View>
+        ) : phase === 'speaking' ? (
+          <View style={styles.status}>
+            <Icon name="speaker" size={22} color={colors.premiumAccent} />
+            <Button label={t('conv.skip')} variant="onPremium" small onPress={conv.skip} />
+          </View>
+        ) : (
+          <View style={styles.listen}>
+            {phase === 'listening' ? (
+              <View style={styles.meter}>
+                <Waveform active level={conv.level} />
+                <T variant="caption" color={colors.premiumMuted} style={styles.noCaps}>
+                  {mmss(conv.seconds)} · {t('rec.maxLength')}
+                </T>
+              </View>
+            ) : conv.error ? (
+              <View style={styles.errorRow}>
+                <Icon name="warning" size={18} color={colors.danger} />
+                <T variant="bodyMedium" color={colors.onPremium} style={styles.flex}>
+                  {t(conv.error.key)}
+                </T>
+              </View>
+            ) : null}
+            {conv.error?.canOpenSettings ? (
+              <Button label={t('rec.openSettings')} variant="onPremium" small onPress={() => Linking.openSettings()} />
+            ) : null}
+            <View style={styles.row}>
+              <Button label={t('rec.typeInstead')} variant="onPremium" small style={styles.flex} onPress={typeInstead} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={phase === 'listening' ? t('conv.tapWhenDone') : t('conv.tapToSpeak')}
+                onPress={conv.mic}
+                disabled={phase === 'starting'}
+                style={({ pressed }) => [
+                  styles.mic,
+                  { backgroundColor: pressed ? colors.primaryPressed : colors.primary, borderColor: 'rgba(201,169,110,0.3)' },
+                ]}>
+                {phase === 'listening' ? <View style={styles.stop} /> : <Icon name="mic" size={30} color={colors.onPrimary} />}
+              </Pressable>
+              <View style={styles.flex}>
+                <T variant="caption" color={colors.premiumMuted} style={[styles.noCaps, styles.center]}>
+                  {phase === 'listening' ? t('conv.tapWhenDone') : t('conv.tapToSpeak')}
+                </T>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </Screen>
   );
@@ -140,6 +276,11 @@ export function RecorderScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  center: { textAlign: 'center' },
+  noCaps: { letterSpacing: 0 },
+  num: { fontVariant: ['tabular-nums'] },
+  billNo: { paddingRight: space[3] },
+  overline: { letterSpacing: 1 },
   panel: {
     flex: 1,
     marginHorizontal: -space[2],
@@ -148,17 +289,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
-    paddingHorizontal: space[6],
-    paddingTop: 28,
+    paddingHorizontal: space[5],
+    paddingTop: space[5],
     paddingBottom: space[8],
-    gap: space[6],
+    gap: space[4],
   },
-  row8: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  langChip: { borderWidth: 1, borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 4 },
-  center: { textAlign: 'center' },
-  transcript: { flex: 1, borderWidth: 1, borderRadius: radii.md, padding: space[4], gap: 6, backgroundColor: 'rgba(255,255,255,0.04)' },
-  dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  top: { gap: 6 },
+  bill: { flex: 1, borderWidth: 1, borderRadius: radii.md, backgroundColor: 'rgba(255,255,255,0.04)' },
+  billContent: { padding: space[4], gap: space[3] },
+  customer: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  item: { flexDirection: 'row', alignItems: 'center', gap: space[3], borderBottomWidth: 1, paddingBottom: space[2] },
+  asked: { borderWidth: 1, borderRadius: radii.sm, padding: space[2] },
+  totalRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, paddingTop: space[2] },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  status: { minHeight: size.mic, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space[3] },
+  listen: { gap: space[3] },
+  meter: { alignItems: 'center', gap: 4 },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   mic: { width: size.mic, height: size.mic, borderRadius: radii.pill, borderWidth: 6, alignItems: 'center', justifyContent: 'center' },
   stop: { width: 28, height: 28, borderRadius: 6, backgroundColor: '#ffffff' },
 });

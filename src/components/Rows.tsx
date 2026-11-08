@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Customer, Txn } from '../data/sample';
+import { Customer, Txn } from '../data/types';
+import { useT } from '../i18n';
 import { timeLabel, whenLabel } from '../logic/dates';
 import { formatINR } from '../logic/money';
 import { customerStatus, initials, methodLabel, useStore } from '../store/AppStore';
@@ -8,13 +9,16 @@ import { radii, space, useTheme } from '../theme';
 import { StatusChip } from './StatusChip';
 import { T } from './Text';
 
-export function TxnRow({ t, first, showDay, onPress }: { t: Txn; first?: boolean; showDay?: boolean; onPress?: () => void }) {
+export function TxnRow({ t: txn, first, showDay, onPress }: { t: Txn; first?: boolean; showDay?: boolean; onPress?: () => void }) {
   const { colors } = useTheme();
+  const t = useT();
   const { customerById } = useStore();
-  const name = customerById(t.customerId)?.name ?? 'Walk-in customer';
-  const when = showDay ? whenLabel(t.createdAt) : timeLabel(t.createdAt);
-  const isPayment = t.kind === 'payment';
-  const sub = isPayment ? `Payment · ${when} · ${methodLabel(t.method)}` : `Bill ${t.billNo ?? ''} · ${when}${t.method !== 'khata' ? ` · ${methodLabel(t.method)}` : ''}`;
+  const name = customerById(txn.customerId)?.name ?? t('common.walkIn');
+  const when = showDay ? whenLabel(t, txn.createdAt) : timeLabel(txn.createdAt);
+  const isPayment = txn.kind === 'payment';
+  const sub = isPayment
+    ? `${t('row.payment')} · ${when} · ${methodLabel(t, txn.method)}`
+    : `${t('row.bill', { no: txn.billNo ?? '' })} · ${when}${txn.method !== 'khata' ? ` · ${methodLabel(t, txn.method)}` : ''}`;
   return (
     <Pressable
       disabled={!onPress}
@@ -31,9 +35,9 @@ export function TxnRow({ t, first, showDay, onPress }: { t: Txn; first?: boolean
       </View>
       <View style={styles.trailing}>
         <T variant="button" color={isPayment ? colors.success : colors.ink} style={styles.num}>
-          {isPayment ? formatINR(t.amount, { sign: true }) : formatINR(t.amount)}
+          {isPayment ? formatINR(txn.amount, { sign: true }) : formatINR(txn.amount)}
         </T>
-        {isPayment ? <StatusChip kind="paid" label="Received" /> : <StatusChip kind={t.method === 'khata' ? 'due' : 'paid'} />}
+        {isPayment ? <StatusChip kind="paid" label={t('status.received')} /> : <StatusChip kind={txn.method === 'khata' ? 'due' : 'paid'} />}
       </View>
     </Pressable>
   );
@@ -41,23 +45,24 @@ export function TxnRow({ t, first, showDay, onPress }: { t: Txn; first?: boolean
 
 export function CustomerRow({ c, first, onPress }: { c: Customer; first?: boolean; onPress?: () => void }) {
   const { colors } = useTheme();
-  const { state } = useStore();
+  const t = useT();
+  const { txns } = useStore();
   const st = customerStatus(c);
-  const last = state.txns.find(t => t.customerId === c.id);
+  const last = txns.find(x => x.customerId === c.id);
   const sub =
     st === 'settled'
       ? last
-        ? `Last · ${whenLabel(last.createdAt)}`
-        : 'No bills yet'
+        ? t('row.last', { when: whenLabel(t, last.createdAt) })
+        : t('row.noBills')
       : c.dueSince
-      ? `Due since ${whenLabel(c.dueSince).split(',')[0]}`
-      : 'Due';
+      ? t('row.dueSince', { date: whenLabel(t, c.dueSince).split(',')[0] })
+      : t('row.due');
   const amtColor = st === 'settled' ? colors.success : st === 'overdue' ? colors.danger : colors.warningText;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${c.name}, ${st === 'settled' ? 'settled' : `${formatINR(c.balance)} ${st}`}`}
+      accessibilityLabel={`${c.name}, ${st === 'settled' ? t('status.settled') : `${formatINR(c.balance)} ${t(st === 'overdue' ? 'status.overdue' : 'status.due')}`}`}
       style={({ pressed }) => [styles.row, styles.tall, !first && { borderTopWidth: 1, borderTopColor: colors.line }, pressed && { backgroundColor: colors.surfaceMuted }]}>
       <View style={[styles.initial, { backgroundColor: colors.surfaceMuted }]}>
         <T variant="button">{initials(c.name)}</T>

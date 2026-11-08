@@ -1,92 +1,93 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BottomNav } from '../components/BottomNav';
+import { ErrorBanner } from '../components/Feedback';
 import { EmptyState } from '../components/Form';
 import { Icon, IconName } from '../components/Icon';
 import { Card, Screen } from '../components/Layout';
 import { LogoMark } from '../components/Logo';
 import { TxnRow } from '../components/Rows';
-import { StatusChip } from '../components/StatusChip';
-import { Bi, T } from '../components/Text';
+import { ChipKind, StatusChip } from '../components/StatusChip';
+import { T } from '../components/Text';
+import { errorText, StringKey, useT } from '../i18n';
 import { shortDate } from '../logic/dates';
 import { formatINR } from '../logic/money';
 import { useRouter } from '../navigation/Router';
-import { customerStatus, initials, todaySummary, useStore } from '../store/AppStore';
+import { customerStatus, initials, useStore } from '../store/AppStore';
 import { radii, size, space, useTheme } from '../theme';
 
 export function HomeScreen() {
   const { colors, shadows, isDark } = useTheme();
+  const t = useT();
   const router = useRouter();
-  const { state, newDraft } = useStore();
-  const { profile } = state;
-  const today = todaySummary(state.txns);
-  const owing = state.customers.filter(c => customerStatus(c) !== 'settled');
+  const { state, customers, txns, refresh, newDraft } = useStore();
+  const shop = state.shop;
+  const owing = customers.filter(c => customerStatus(c) !== 'settled');
   const owed = owing.reduce((s, c) => s + c.balance, 0);
+  const { status, error } = state.sync;
+  const chip: ChipKind = status === 'loading' ? 'syncing' : status === 'error' ? (error?.kind === 'network' ? 'offline' : 'failed') : 'synced';
 
-  const quick: { en: string; te: string; icon: IconName; tint: string; well: string; onPress: () => void }[] = [
-    {
-      en: 'Manual bill',
-      te: 'చేతితో బిల్లు',
-      icon: 'receipt',
-      tint: colors.primary,
-      well: colors.primarySoft,
-      onPress: () => router.push({ name: 'editItems', draft: newDraft() }),
-    },
-    { en: 'Add customer', te: 'కస్టమర్ జోడించు', icon: 'userPlus', tint: colors.primary, well: colors.primarySoft, onPress: () => router.push({ name: 'addCustomer' }) },
-    { en: 'Record payment', te: 'చెల్లింపు నమోదు', icon: 'payment', tint: colors.success, well: colors.successSoft, onPress: () => router.push({ name: 'recordPayment' }) },
-    { en: 'Khata', te: 'ఖాతా', icon: 'khata', tint: colors.warning, well: colors.warningSoft, onPress: () => router.setTab('khata') },
+  const quick: { label: StringKey; icon: IconName; tint: string; well: string; onPress: () => void }[] = [
+    { label: 'home.manualBill', icon: 'receipt', tint: colors.primary, well: colors.primarySoft, onPress: () => router.push({ name: 'editItems', draft: newDraft() }) },
+    { label: 'home.addCustomer', icon: 'userPlus', tint: colors.primary, well: colors.primarySoft, onPress: () => router.push({ name: 'addCustomer' }) },
+    { label: 'home.recordPayment', icon: 'payment', tint: colors.success, well: colors.successSoft, onPress: () => router.push({ name: 'recordPayment' }) },
+    { label: 'home.khata', icon: 'khata', tint: colors.warning, well: colors.warningSoft, onPress: () => router.setTab('khata') },
   ];
 
   return (
     <Screen
+      refreshing={status === 'loading'}
+      onRefresh={refresh}
       header={
         <View style={styles.header}>
           <LogoMark size={40} ground={isDark ? 'dark' : 'light'} />
           <View style={styles.flex}>
-            <T variant="sectionTitle" numberOfLines={1} style={{ fontWeight: '700' }}>
-              {profile.shopName}
+            <T variant="sectionTitle" numberOfLines={1} style={styles.bold}>
+              {shop?.shopName ?? ''}
             </T>
-            <StatusChip kind={state.settings.offline ? 'offline' : 'synced'} align="start" />
+            <StatusChip kind={chip} align="start" />
           </View>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Profile and settings"
+            accessibilityLabel={t('home.profileA11y')}
             onPress={() => router.push({ name: 'settings' })}
             style={({ pressed }) => [styles.avatar, { borderColor: colors.line, backgroundColor: pressed ? colors.surfaceMuted : colors.surface }]}>
-            <T variant="button">{initials(profile.ownerName)}</T>
+            <T variant="button">{initials(shop?.shopkeeperName ?? '')}</T>
           </Pressable>
         </View>
       }
       bottomNav={<BottomNav active="home" onChange={router.setTab} />}>
       <T variant="supporting" color={colors.ink2} style={styles.greet}>
-        Namaskaram, {profile.ownerName.split(' ')[0]} garu
+        {t('home.greet', { name: (shop?.shopkeeperName ?? '').split(' ')[0] })}
       </T>
+
+      {status === 'error' ? <ErrorBanner message={errorText(t, error)} onRetry={refresh} /> : null}
 
       <Card style={{ gap: space[4] }}>
         <View style={{ gap: 2 }}>
           <T variant="caption" color={colors.ink2}>
-            TODAY'S SALES
+            {t('home.todaysSales')}
           </T>
-          <T variant="displayAmount">{formatINR(today.sales)}</T>
+          <T variant="displayAmount">{formatINR(shop?.todaysBill ?? 0)}</T>
           <T variant="supporting" color={colors.ink2}>
-            {today.bills} {today.bills === 1 ? 'bill' : 'bills'} · {shortDate(Date.now())}
+            {shortDate(t, Date.now())}
           </T>
         </View>
         <View style={styles.grid2}>
           <View style={[styles.well, { backgroundColor: colors.surfaceMuted }]}>
             <T variant="supporting" color={colors.ink2}>
-              Received
+              {t('home.thisWeek')}
             </T>
             <T variant="sectionTitle" color={colors.success} style={styles.amount}>
-              {formatINR(today.received)}
+              {formatINR(shop?.weeklyBill ?? 0)}
             </T>
           </View>
           <View style={[styles.well, { backgroundColor: colors.surfaceMuted }]}>
             <T variant="supporting" color={colors.ink2}>
-              Due · బాకీ
+              {t('home.creditToday')}
             </T>
             <T variant="sectionTitle" color={colors.warningText} style={styles.amount}>
-              {formatINR(today.due)}
+              {formatINR(shop?.todaysDues ?? 0)}
             </T>
           </View>
         </View>
@@ -95,7 +96,7 @@ export function HomeScreen() {
       {/* The one blue hero on Home. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Create bill with voice"
+        accessibilityLabel={t('home.voiceBill')}
         onPress={() => router.push({ name: 'recorder' })}
         style={({ pressed }) => [
           styles.hero,
@@ -105,22 +106,26 @@ export function HomeScreen() {
         <View style={styles.heroMic}>
           <Icon name="mic" size={24} color={colors.onPrimary} />
         </View>
-        <Bi en="Create bill with voice" te="వాయిస్‌తో బిల్లు చేయండి" variant="button" color={colors.onPrimary} teColor={colors.primarySoft} style={styles.flex} />
+        <T variant="button" color={colors.onPrimary} style={styles.flex}>
+          {t('home.voiceBill')}
+        </T>
         <Icon name="chevronRight" size={20} color={colors.onPrimary} />
       </Pressable>
 
       <View style={styles.quickGrid}>
         {quick.map(q => (
           <Pressable
-            key={q.en}
+            key={q.label}
             accessibilityRole="button"
-            accessibilityLabel={q.en}
+            accessibilityLabel={t(q.label)}
             onPress={q.onPress}
             style={({ pressed }) => [styles.quick, { borderColor: colors.line, backgroundColor: pressed ? colors.surfaceMuted : colors.surface }]}>
             <View style={[styles.quickWell, { backgroundColor: q.well }]}>
               <Icon name={q.icon} size={20} color={q.tint} />
             </View>
-            <Bi en={q.en} te={q.te} style={styles.flex} />
+            <T variant="bodyMedium" style={styles.flex}>
+              {t(q.label)}
+            </T>
           </Pressable>
         ))}
       </View>
@@ -132,29 +137,29 @@ export function HomeScreen() {
           style={({ pressed }) => [styles.nudge, { backgroundColor: pressed ? colors.surfaceMuted : colors.warningSoft }]}>
           <Icon name="khata" size={20} color={colors.warning} />
           <T variant="bodyMedium" color={colors.warningText} style={styles.flex}>
-            {owing.length} customers owe {formatINR(owed)}
+            {t('home.owe', { count: owing.length, amount: formatINR(owed) })}
           </T>
           <T variant="bodyMedium" color={colors.primary}>
-            Open Khata
+            {t('home.openKhata')}
           </T>
         </Pressable>
       ) : null}
 
       <View style={{ gap: space[2] }}>
         <View style={styles.between}>
-          <T variant="sectionTitle">Recent activity</T>
+          <T variant="sectionTitle">{t('home.recent')}</T>
           <Pressable accessibilityRole="link" onPress={() => router.setTab('history')} hitSlop={12}>
             <T variant="bodyMedium" color={colors.primary}>
-              See all
+              {t('home.seeAll')}
             </T>
           </Pressable>
         </View>
         <Card padded={false}>
-          {state.txns.length === 0 ? (
-            <EmptyState icon="receipt" title="No bills yet" te="ఇంకా బిల్లులు లేవు" body="Make your first voice bill." />
+          {txns.length === 0 ? (
+            <EmptyState icon="receipt" title={t('home.noBills')} body={t('home.noBillsBody')} />
           ) : (
-            state.txns.slice(0, 4).map((t, i) => (
-              <TxnRow key={t.id} t={t} first={i === 0} showDay onPress={t.customerId ? () => router.push({ name: 'customer', id: t.customerId as string }) : undefined} />
+            txns.slice(0, 4).map((x, i) => (
+              <TxnRow key={x.id} t={x} first={i === 0} showDay onPress={x.customerId ? () => router.push({ name: 'customer', id: x.customerId as string }) : undefined} />
             ))
           )}
         </Card>
@@ -165,6 +170,7 @@ export function HomeScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  bold: { fontWeight: '700' },
   header: { height: size.headerH + 8, paddingHorizontal: space[5], flexDirection: 'row', alignItems: 'center', gap: space[3] },
   avatar: { width: size.touchMin, height: size.touchMin, borderRadius: radii.pill, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   greet: { marginBottom: -space[3] },

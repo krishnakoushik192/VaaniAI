@@ -1,6 +1,7 @@
 module.exports = {
   preset: '@react-native/jest-preset',
+  setupFiles: ['<rootDir>/jest.setup.js'],
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|react-native-svg|react-native-qrcode-svg)/)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-native-async-storage|react-native-svg|react-native-qrcode-svg)/)',
   ],
 };

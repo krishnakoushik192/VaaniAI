@@ -20,6 +20,8 @@ export function TextField({
   autoFocus,
   maxLength,
   autoCapitalize,
+  secureTextEntry,
+  editable = true,
 }: {
   label: string;
   te?: string;
@@ -35,6 +37,8 @@ export function TextField({
   autoFocus?: boolean;
   maxLength?: number;
   autoCapitalize?: 'none' | 'sentences' | 'words';
+  secureTextEntry?: boolean;
+  editable?: boolean;
 }) {
   const { colors } = useTheme();
   const [focused, setFocused] = React.useState(false);
@@ -45,7 +49,7 @@ export function TextField({
       <View
         style={[
           styles.box,
-          { borderColor: border, borderWidth: focused || error ? 2 : 1, backgroundColor: warn ? colors.warningSoft : colors.surface },
+          { borderColor: border, borderWidth: focused || error ? 2 : 1, backgroundColor: !editable ? colors.surfaceMuted : warn ? colors.warningSoft : colors.surface },
         ]}>
         {prefix ? (
           <T variant="body" color={colors.ink2}>
@@ -62,9 +66,11 @@ export function TextField({
           autoFocus={autoFocus}
           maxLength={maxLength}
           autoCapitalize={autoCapitalize}
+          secureTextEntry={secureTextEntry}
+          editable={editable}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          style={[type.body, styles.input, { color: colors.ink }]}
+          style={[type.body, styles.input, { color: editable ? colors.ink : colors.ink2 }]}
         />
         {suffix ? (
           <T variant="body" color={colors.ink2}>
