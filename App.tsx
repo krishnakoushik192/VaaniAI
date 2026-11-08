@@ -18,6 +18,7 @@ import { HelpScreen } from './src/screens/HelpScreen';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { KhataScreen } from './src/screens/KhataScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { PaymentQRScreen } from './src/screens/PaymentQRScreen';
 import { RecordPaymentScreen } from './src/screens/RecordPaymentScreen';
 import { RecorderScreen } from './src/screens/RecorderScreen';
@@ -26,6 +27,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { AppStoreProvider, useStore } from './src/store/AppStore';
 import { ThemeProvider, useTheme } from './src/theme';
+import { LoadingState } from './src/components/Feedback';
 
 function renderRoute(route: Route) {
   switch (route.name) {
@@ -58,13 +60,24 @@ function renderRoute(route: Route) {
   }
 }
 
+/** Start-up → choose language (first run) → log in → the app. */
 function Root() {
   const { isDark } = useTheme();
   const { state } = useStore();
+  const screen = !state.booted ? (
+    <LoadingState />
+  ) : !state.onboarded ? (
+    <WelcomeScreen />
+  ) : !state.token ? (
+    <LoginScreen />
+  ) : (
+    // key: a new login starts with a fresh navigation stack
+    <RouterProvider key={state.shop?.id ?? 'app'} render={renderRoute} />
+  );
   return (
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      {state.onboarded ? <RouterProvider render={renderRoute} /> : <WelcomeScreen />}
+      {screen}
     </>
   );
 }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleProp, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { useLanguage } from '../i18n';
 import { type as t, useTheme } from '../theme';
 
 type Variant = keyof typeof t;
@@ -18,8 +19,17 @@ export function T({
   numberOfLines?: number;
 }) {
   const { colors } = useTheme();
+  const lang = useLanguage();
+  const base = t[variant] as { lineHeight?: number };
+  // Telugu and Devanagari have taller glyphs (vowel signs above/below): give them more room.
+  const tall = lang !== 'en' && base.lineHeight ? { lineHeight: Math.round(base.lineHeight * 1.2) } : null;
   return (
-    <Text numberOfLines={numberOfLines} style={[t[variant], { color: color ?? colors.ink }, style]}>
+    <Text
+      numberOfLines={numberOfLines}
+      // Android's default "highQuality" line breaking mis-measures Telugu/Devanagari and can
+      // drop the last word of a line; "simple" measures them correctly.
+      textBreakStrategy="simple"
+      style={[t[variant], tall, { color: color ?? colors.ink }, style]}>
       {children}
     </Text>
   );

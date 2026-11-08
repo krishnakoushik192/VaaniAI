@@ -64,7 +64,7 @@ export function Button({
         ]}>
         {icon ? <Icon name={icon} size={20} color={palette.fg} /> : null}
         <View style={styles.labels}>
-          <T variant="button" color={palette.fg}>
+          <T variant="button" color={palette.fg} style={styles.labelText}>
             {label}
           </T>
           {te ? (
@@ -89,5 +89,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  labels: { alignItems: 'center', gap: 2 },
+  // flexShrink: long Telugu/Hindi labels wrap inside the button instead of being cut off.
+  labels: { alignItems: 'center', gap: 2, flexShrink: 1 },
+  labelText: { textAlign: 'center' },
 });

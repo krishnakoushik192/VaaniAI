@@ -2,13 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Button } from '../components/Button';
+import { ErrorBanner } from '../components/Feedback';
 import { AppHeader, Card, Screen } from '../components/Layout';
 import { FingerprintSheet, QuestionSheet } from '../components/Sheet';
 import { StatusChip } from '../components/StatusChip';
 import { T } from '../components/Text';
+import { errorText, useT } from '../i18n';
 import { formatINR, upiUri } from '../logic/money';
-import { mmss } from '../logic/useVoiceRecorder';
-import { BillDraft, useRouter } from '../navigation/Router';
+import { mmss } from '../logic/dates';
+import { BillDraft, PaymentMethod, useRouter } from '../navigation/Router';
 import { useStore } from '../store/AppStore';
 import { radii, space, useTheme } from '../theme';
 
@@ -18,21 +20,25 @@ type Phase = 'waiting' | 'asking' | 'notReceived';
 
 export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: number }) {
   const { colors } = useTheme();
+  const t = useT();
   const router = useRouter();
   const { state, saveBill, customerById } = useStore();
   const [phase, setPhase] = useState<Phase>('waiting');
   const [left, setLeft] = useState(WINDOW);
   const [fp, setFp] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<{ text: string; retry: () => void } | null>(null);
   const customer = customerById(draft.customerId);
-  const { profile } = state;
+  const shop = state.shop;
+  const upiId = shop?.upiId;
 
   useEffect(() => {
-    if (phase !== 'waiting') {
+    if (phase !== 'waiting' || !upiId) {
       return;
     }
-    const t = setInterval(() => setLeft(s => (s > 0 ? s - 1 : 0)), 1000);
-    return () => clearInterval(t);
-  }, [phase]);
+    const timer = setInterval(() => setLeft(s => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [phase, upiId]);
 
   useEffect(() => {
     if (left === 0 && phase === 'waiting') {
@@ -40,20 +46,33 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
     }
   }, [left, phase]);
 
-  const finish = (method: 'upi' | 'cash') => {
-    saveBill(draft, method);
-    router.resetTo({ name: 'result', kind: 'paid', amount: total, customerId: draft.customerId, method });
+  const commit = async (method: PaymentMethod) => {
+    if (saving) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await saveBill(draft, method);
+      router.resetTo({
+        name: 'result',
+        kind: method === 'khata' ? 'khata' : 'paid',
+        amount: total,
+        customerId: draft.customerId,
+        method,
+      });
+    } catch (e) {
+      setError({ text: errorText(t, e), retry: () => commit(method) });
+      setSaving(false);
+    }
   };
-  const toKhata = () => {
-    saveBill(draft, 'khata');
-    router.resetTo({ name: 'result', kind: 'khata', amount: total, customerId: draft.customerId, method: 'khata' });
-  };
+
   const arrived = () => {
     setPhase('waiting');
     if (state.settings.fingerprint) {
       setFp(true);
     } else {
-      finish('upi');
+      commit('upi');
     }
   };
   const showAgain = () => {
@@ -63,75 +82,96 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
 
   return (
     <Screen
-      header={<AppHeader title="Collect payment" te="డబ్బు తీసుకోండి" onBack={router.back} />}
+      header={<AppHeader title={t('pay.title')} onBack={router.back} />}
       footer={
-        phase === 'notReceived' ? (
+        !upiId ? (
+          <Button label={t('pay.addUpi')} onPress={() => router.push({ name: 'editProfile' })} />
+        ) : phase === 'notReceived' ? (
           <>
-            <Button label="Show QR again" icon="qr" onPress={showAgain} />
-            <Button label={customer ? 'Add to Khata' : 'Add to Khata (needs customer)'} variant="secondary" onPress={toKhata} disabled={!customer} />
+            <Button label={t('pay.showAgain')} icon="qr" onPress={showAgain} disabled={saving} />
+            <Button
+              label={saving ? t('common.saving') : customer ? t('pay.addToKhata') : t('pay.addToKhataNeeds')}
+              variant="secondary"
+              onPress={() => commit('khata')}
+              disabled={!customer || saving}
+            />
           </>
         ) : (
-          <Button label="Check payment" te="చెల్లింపు చూడండి" onPress={() => setPhase('asking')} />
+          <Button label={saving ? t('common.saving') : t('pay.check')} onPress={() => setPhase('asking')} disabled={saving} />
         )
       }>
+      {error ? <ErrorBanner message={error.text} onRetry={error.retry} /> : null}
+
       <Card style={styles.qrCard}>
         <View style={styles.center}>
           <T variant="supporting" color={colors.ink2}>
-            {customer?.name ?? 'Customer'} pays
+            {t('pay.pays', { name: customer?.name ?? t('pay.customer') })}
           </T>
           <T variant="displayAmount">{formatINR(total)}</T>
           <T variant="caption" color={colors.ink2}>
-            ONLINE · UPI
+            {t('pay.onlineUpi')}
           </T>
         </View>
 
-        <View
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={`UPI QR code for ${formatINR(total)}`}
-          style={[styles.qrBox, { backgroundColor: colors.qrGround, borderColor: colors.line, opacity: phase === 'notReceived' ? 0.3 : 1 }]}>
-          <QRCode
-            value={upiUri({ vpa: profile.upiId, payee: profile.shopName, amount: total, note: `Bill ${draft.number}` })}
-            size={200}
-            color={colors.qrInk}
-            backgroundColor={colors.qrGround}
-          />
-        </View>
-
-        <T variant="bodyMedium">{profile.upiId}</T>
-        {phase === 'notReceived' ? (
-          <StatusChip kind="failed" label="Not received" align="center" />
+        {upiId && shop ? (
+          <>
+            <View
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel={t('pay.qrA11y', { amount: formatINR(total) })}
+              style={[styles.qrBox, { backgroundColor: colors.qrGround, borderColor: colors.line, opacity: phase === 'notReceived' ? 0.3 : 1 }]}>
+              <QRCode
+                value={upiUri({ vpa: upiId, payee: shop.shopName, amount: total, note: `Bill ${draft.number}` })}
+                size={200}
+                color={colors.qrInk}
+                backgroundColor={colors.qrGround}
+              />
+            </View>
+            <T variant="bodyMedium">{upiId}</T>
+            {phase === 'notReceived' ? (
+              <StatusChip kind="failed" label={t('pay.notReceived')} align="center" />
+            ) : (
+              <StatusChip kind="pending" label={t('pay.waiting', { time: mmss(left) })} align="center" />
+            )}
+          </>
         ) : (
-          <StatusChip kind="pending" label={`Waiting · ${mmss(left)}`} align="center" />
+          <T variant="body" color={colors.warningText} style={styles.text}>
+            {t('pay.noUpi')}
+          </T>
         )}
       </Card>
 
       {phase !== 'notReceived' ? (
         <View style={styles.row}>
-          <Button label="Paid in cash" variant="secondary" small style={styles.flex} onPress={() => router.replace({ name: 'cashConfirm', draft, total })} />
-          <Button label="Add to Khata" variant="secondary" small style={styles.flex} onPress={toKhata} disabled={!customer} />
+          <Button
+            label={t('pay.paidCash')}
+            variant="secondary"
+            small
+            style={styles.flex}
+            disabled={saving}
+            onPress={() => router.replace({ name: 'cashConfirm', draft, total })}
+          />
+          <Button label={t('pay.addToKhata')} variant="secondary" small style={styles.flex} onPress={() => commit('khata')} disabled={!customer || saving} />
         </View>
       ) : null}
 
       <QuestionSheet
         visible={phase === 'asking'}
         onClose={() => setPhase('waiting')}
-        title={`Did ${formatINR(total)} arrive in your UPI app?`}
-        te="మీ UPI యాప్‌లో డబ్బు వచ్చిందా?"
-        body="Check your UPI app or the sound box before you confirm."
-        yes="Yes, it arrived"
-        yesTe="అవును, వచ్చింది"
-        no="No, not yet"
+        title={t('pay.arrivedQ', { amount: formatINR(total) })}
+        body={t('pay.arrivedBody')}
+        yes={t('pay.yes')}
+        no={t('pay.no')}
         onYes={arrived}
         onNo={() => setPhase('notReceived')}
       />
       <FingerprintSheet
         visible={fp}
         onClose={() => setFp(false)}
-        amountLabel={`${formatINR(total)} received`}
+        amountLabel={formatINR(total)}
         onDone={() => {
           setFp(false);
-          finish('upi');
+          commit('upi');
         }}
       />
     </Screen>
@@ -140,6 +180,7 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  text: { textAlign: 'center' },
   qrCard: { alignItems: 'center', gap: space[4], paddingVertical: space[6], borderRadius: radii.lg },
   center: { alignItems: 'center', gap: 2 },
   qrBox: { padding: 14, borderWidth: 1, borderRadius: radii.md },

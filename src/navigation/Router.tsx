@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, BackHandler, StyleSheet } from 'react-native';
 import type { TabKey } from '../components/BottomNav';
-import type { PaymentMethod } from '../data/sample';
+import type { PaymentMethod } from '../data/types';
 import type { BillDraft } from '../store/AppStore';
 import { duration } from '../theme';
 

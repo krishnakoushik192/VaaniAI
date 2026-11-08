@@ -33,7 +33,9 @@ export type IconName =
   | 'user'
   | 'qr'
   | 'refresh'
-  | 'logout';
+  | 'logout'
+  | 'speaker'
+  | 'stop';
 
 type Props = { name: IconName; size?: number; color: string; strokeWidth?: number };
 
@@ -61,6 +63,10 @@ function render(name: IconName, p: object) {
           <Path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21" {...p} />
         </>
       );
+    case 'speaker':
+      return <Path d="M4 10v4h4l5 4V6L8 10H4zM16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12" {...p} />;
+    case 'stop':
+      return <Rect x={6.5} y={6.5} width={11} height={11} rx={2} {...p} />;
     case 'close':
       return <Path d="M6 6l12 12M18 6L6 18" {...p} />;
     case 'back':

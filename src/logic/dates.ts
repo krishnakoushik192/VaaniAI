@@ -1,3 +1,5 @@
+import type { TFn } from '../i18n';
+
 export function timeLabel(ts: number): string {
   const d = new Date(ts);
   let h = d.getHours();
@@ -7,26 +9,29 @@ export function timeLabel(ts: number): string {
   return `${h}:${m} ${ap}`;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const months = (t: TFn) => t('date.months').split(',');
+const days = (t: TFn) => t('date.days').split(',');
 
-export function dayLabel(ts: number): string {
+export function dayLabel(t: TFn, ts: number): string {
   const d = new Date(ts);
   const today = new Date();
   const y = new Date();
   y.setDate(today.getDate() - 1);
   if (d.toDateString() === today.toDateString()) {
-    return 'Today';
+    return t('date.today');
   }
   if (d.toDateString() === y.toDateString()) {
-    return 'Yesterday';
+    return t('date.yesterday');
   }
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return `${d.getDate()} ${months(t)[d.getMonth()]}`;
 }
 
-export const shortDate = (ts: number) => {
+export const shortDate = (t: TFn, ts: number) => {
   const d = new Date(ts);
-  return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return `${days(t)[d.getDay()]}, ${d.getDate()} ${months(t)[d.getMonth()]}`;
 };
 
-export const whenLabel = (ts: number) => `${dayLabel(ts)}, ${timeLabel(ts)}`;
+export const whenLabel = (t: TFn, ts: number) => `${dayLabel(t, ts)}, ${timeLabel(ts)}`;
+
+/** 75 → "01:15" */
+export const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;

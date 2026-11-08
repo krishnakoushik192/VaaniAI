@@ -6,172 +6,146 @@ import { AppHeader, Card, Screen } from '../components/Layout';
 import { LogoLockup } from '../components/Logo';
 import { Segmented } from '../components/Segmented';
 import { BottomSheet } from '../components/Sheet';
-import { StatusChip } from '../components/StatusChip';
 import { T } from '../components/Text';
-import { Language } from '../data/sample';
-import { whenLabel } from '../logic/dates';
-import { initials, useStore } from '../store/AppStore';
+import { LANGUAGES, useT } from '../i18n';
 import { useRouter } from '../navigation/Router';
+import { initials, useStore } from '../store/AppStore';
 import { radii, space, useTheme } from '../theme';
-import { LANGUAGES } from './WelcomeScreen';
+
+const APP_VERSION = '0.2.0';
 
 export function SettingsScreen() {
   const { colors, isDark, scheme, setScheme } = useTheme();
+  const t = useT();
   const router = useRouter();
-  const { state, updateProfile, updateSettings, resetDemo } = useStore();
-  const { profile, settings } = state;
+  const { state, setLanguage, updateSettings, logout } = useStore();
+  const { shop, settings } = state;
   const [langOpen, setLangOpen] = useState(false);
-  const [backingUp, setBackingUp] = useState(false);
 
-  const lang = LANGUAGES.find(l => l.key === profile.language);
+  const lang = LANGUAGES.find(l => l.key === state.language);
 
-  const backupNow = () => {
-    if (settings.offline) {
-      Alert.alert('You are offline', 'Backup will run when the phone is back online.');
-      return;
-    }
-    setBackingUp(true);
-    setTimeout(() => {
-      updateSettings({ lastBackup: Date.now() });
-      setBackingUp(false);
-    }, 1400);
-  };
-
-  const confirmReset = () =>
-    Alert.alert('Reset demo data?', 'All bills, payments and customers go back to the sample data.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset',
-        style: 'destructive',
-        onPress: () => {
-          resetDemo();
-          router.reset('home');
-        },
-      },
+  const confirmLogout = () =>
+    Alert.alert(t('set.logoutQ'), t('set.logoutBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('set.logout'), style: 'destructive', onPress: logout },
     ]);
 
   return (
-    <Screen header={<AppHeader title="Profile and settings" te="ప్రొఫైల్, సెట్టింగ్‌లు" onBack={router.back} />}>
+    <Screen header={<AppHeader title={t('set.title')} onBack={router.back} />}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${profile.ownerName}, ${profile.shopName}. Edit profile`}
+        accessibilityLabel={`${shop?.shopkeeperName ?? ''}, ${shop?.shopName ?? ''}. ${t('common.edit')}`}
         onPress={() => router.push({ name: 'editProfile' })}
         style={({ pressed }) => [styles.profile, { backgroundColor: pressed ? colors.surfaceMuted : colors.surface, borderColor: colors.line }]}>
         <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}>
-          <T variant="sectionTitle" color={colors.primary} style={{ fontWeight: '700' }}>
-            {initials(profile.ownerName)}
+          <T variant="sectionTitle" color={colors.primary} style={styles.bold}>
+            {initials(shop?.shopkeeperName ?? '')}
           </T>
         </View>
         <View style={styles.flex}>
           <T variant="sectionTitle" numberOfLines={1}>
-            {profile.ownerName}
+            {shop?.shopkeeperName}
           </T>
           <T variant="supporting" color={colors.ink2} numberOfLines={1}>
-            {profile.shopName}
+            {shop?.shopName}
           </T>
           <T variant="supporting" color={colors.ink2}>
-            +91 {profile.phone}
+            +91 {shop?.mobileNumber}
           </T>
         </View>
         <View style={[styles.editPill, { borderColor: colors.lineStrong }]}>
           <Icon name="edit" size={16} color={colors.ink} />
-          <T variant="bodyMedium">Edit</T>
+          <T variant="bodyMedium">{t('common.edit')}</T>
         </View>
       </Pressable>
 
-      <SectionLabel>SHOP</SectionLabel>
+      <SectionLabel>{t('set.shop')}</SectionLabel>
       <Card padded={false}>
-        <SettingRow first icon="store" title="Shop name" value={profile.shopName} onPress={() => router.push({ name: 'editProfile' })} />
-        <SettingRow icon="qr" title="UPI ID" sub="Shown on payment QR" value={profile.upiId} onPress={() => router.push({ name: 'editProfile' })} />
-        <SettingRow icon="language" title="Language" te="భాష" value={lang?.native} onPress={() => setLangOpen(true)} />
+        <SettingRow first icon="store" title={t('set.shopName')} value={shop?.shopName} onPress={() => router.push({ name: 'editProfile' })} />
+        <SettingRow
+          icon="qr"
+          title={t('set.upiId')}
+          sub={t('set.upiSub')}
+          value={shop?.upiId ?? t('set.notSet')}
+          onPress={() => router.push({ name: 'editProfile' })}
+        />
+        <SettingRow icon="language" title={t('set.language')} value={lang?.native} onPress={() => setLangOpen(true)} />
       </Card>
 
-      <SectionLabel>SECURITY</SectionLabel>
+      <SectionLabel>{t('set.security')}</SectionLabel>
       <Card padded={false}>
         <SettingRow
           first
           icon="fingerprint"
-          title="Fingerprint to confirm money"
-          sub="Asked before marking a bill paid"
+          title={t('set.fingerprint')}
+          sub={t('set.fingerprintSub')}
           toggle={settings.fingerprint}
           onToggle={v => updateSettings({ fingerprint: v })}
         />
+        <SettingRow
+          icon="speaker"
+          title={t('set.readBack')}
+          sub={t('set.readBackSub')}
+          toggle={settings.readBack}
+          onToggle={v => updateSettings({ readBack: v })}
+        />
       </Card>
 
-      <SectionLabel>BACKUP AND SYNC</SectionLabel>
-      <Card padded={false}>
-        <SettingRow
-          first
-          icon="cloud"
-          title={backingUp ? 'Backing up…' : 'Back up now'}
-          sub={settings.lastBackup ? `Last backup · ${whenLabel(settings.lastBackup)}` : 'Not backed up yet'}
-          onPress={backingUp ? undefined : backupNow}
-        />
-        <SettingRow
-          icon="cloudOff"
-          title="Work offline (demo)"
-          sub="Saves show “Saved on this phone”"
-          toggle={settings.offline}
-          onToggle={v => updateSettings({ offline: v })}
-        />
-        <View style={[styles.syncRow, { borderTopColor: colors.line }]}>
-          <T variant="supporting" color={colors.ink2}>
-            Status
-          </T>
-          <StatusChip kind={backingUp ? 'syncing' : settings.offline ? 'offline' : 'synced'} />
-        </View>
-      </Card>
-
-      <SectionLabel>APPEARANCE</SectionLabel>
+      <SectionLabel>{t('set.appearance')}</SectionLabel>
       <Card style={{ gap: space[3] }}>
         <View style={styles.inline}>
           <Icon name="moon" size={20} color={colors.primary} />
           <T variant="bodyMedium" style={styles.flex}>
-            Dark mode
+            {t('set.darkMode')}
           </T>
           <T variant="supporting" color={colors.ink2}>
-            {isDark ? 'On' : 'Off'}
+            {isDark ? t('set.on') : t('set.off')}
           </T>
         </View>
         <Segmented
-          label="Dark mode"
+          label={t('set.darkMode')}
           value={scheme}
           onChange={setScheme}
           options={[
-            { key: 'system', label: 'Phone' },
-            { key: 'light', label: 'Light' },
-            { key: 'dark', label: 'Dark' },
+            { key: 'system', label: t('set.schemePhone') },
+            { key: 'light', label: t('set.schemeLight') },
+            { key: 'dark', label: t('set.schemeDark') },
           ]}
         />
       </Card>
 
-      <SectionLabel>SUPPORT</SectionLabel>
+      <SectionLabel>{t('set.support')}</SectionLabel>
       <Card padded={false}>
-        <SettingRow first icon="help" title="Help and support" te="సహాయం" onPress={() => router.push({ name: 'help' })} />
-        <SettingRow icon="refresh" title="Reset demo data" danger onPress={confirmReset} />
+        <SettingRow first icon="help" title={t('set.help')} onPress={() => router.push({ name: 'help' })} />
+      </Card>
+
+      <SectionLabel>{t('set.account')}</SectionLabel>
+      <Card padded={false}>
+        <SettingRow first icon="close" title={t('set.logout')} danger onPress={confirmLogout} />
       </Card>
 
       <View style={styles.about}>
         <LogoLockup width={140} ground={isDark ? 'dark' : 'light'} />
-        <T variant="supporting" color={colors.ink2} style={{ fontWeight: '600' }}>
-          Your shop. Your voice. Your business.
+        <T variant="supporting" color={colors.ink2} style={styles.semibold}>
+          {t('welcome.tagline')}
         </T>
         <T variant="caption" color={colors.ink2}>
-          VERSION 0.1.0 · DEMO
+          {t('set.version', { v: APP_VERSION })}
         </T>
       </View>
 
-      <BottomSheet visible={langOpen} onClose={() => setLangOpen(false)} title="Language" te="భాష">
+      <BottomSheet visible={langOpen} onClose={() => setLangOpen(false)} title={t('set.language')}>
         <View style={{ gap: space[2] }}>
           {LANGUAGES.map(l => {
-            const on = l.key === profile.language;
+            const on = l.key === state.language;
             return (
               <Pressable
                 key={l.key}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: on }}
+                accessibilityLabel={l.en}
                 onPress={() => {
-                  updateProfile({ language: l.key as Language });
+                  setLanguage(l.key);
                   setLangOpen(false);
                 }}
                 style={[styles.langRow, { borderColor: on ? colors.primary : colors.line, backgroundColor: on ? colors.primarySoft : colors.surface }]}>
@@ -190,10 +164,11 @@ export function SettingsScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  bold: { fontWeight: '700' },
+  semibold: { fontWeight: '600' },
   profile: { borderWidth: 1, borderRadius: radii.md, padding: space[4], flexDirection: 'row', alignItems: 'center', gap: space[3] },
   avatar: { width: 56, height: 56, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center' },
   editPill: { minHeight: 40, borderWidth: 1, borderRadius: radii.pill, paddingHorizontal: space[3], flexDirection: 'row', alignItems: 'center', gap: 6 },
-  syncRow: { borderTopWidth: 1, paddingHorizontal: space[4], paddingVertical: space[3], flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   inline: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   about: { alignItems: 'center', gap: space[2], paddingVertical: space[6] },
   langRow: { minHeight: 56, borderWidth: 1, borderRadius: radii.md, paddingHorizontal: space[4], flexDirection: 'row', alignItems: 'center' },

@@ -4,33 +4,29 @@ import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { Screen } from '../components/Layout';
 import { LogoLockup } from '../components/Logo';
-import { Bi, T } from '../components/Text';
-import { Language } from '../data/sample';
+import { T } from '../components/Text';
+import { Language } from '../data/types';
+import { LANGUAGES, translate } from '../i18n';
 import { useStore } from '../store/AppStore';
 import { radii, space, useTheme } from '../theme';
 
-export const LANGUAGES: { key: Language; native: string; en: string }[] = [
-  { key: 'te', native: 'తెలుగు', en: 'Telugu' },
-  { key: 'en', native: 'English', en: 'English' },
-  { key: 'hi', native: 'हिन्दी', en: 'Hindi' },
-];
-
-/** First run: lockup, tagline, choose language. */
+/** First run: lockup, tagline, choose language. Text follows the highlighted language. */
 export function WelcomeScreen() {
   const { colors, isDark } = useTheme();
   const { state, onboard } = useStore();
-  const [lang, setLang] = useState<Language>(state.profile.language);
+  const [lang, setLang] = useState<Language>(state.language);
+  const tr = (key: Parameters<typeof translate>[1]) => translate(lang, key);
 
   return (
-    <Screen footer={<Button label="Continue" te="కొనసాగించండి" onPress={() => onboard(lang)} />}>
+    <Screen footer={<Button label={tr('common.continue')} onPress={() => onboard(lang)} />}>
       <View style={styles.hero}>
         <LogoLockup width={220} ground={isDark ? 'dark' : 'light'} />
         <T variant="body" color={colors.ink2} style={styles.tagline}>
-          Your shop. Your voice. Your business.
+          {tr('welcome.tagline')}
         </T>
       </View>
 
-      <Bi en="Choose your language" te="మీ భాషను ఎంచుకోండి" variant="sectionTitle" />
+      <T variant="sectionTitle">{tr('welcome.chooseLanguage')}</T>
       <View accessibilityRole="radiogroup" style={{ gap: space[3] }}>
         {LANGUAGES.map(l => {
           const on = l.key === lang;

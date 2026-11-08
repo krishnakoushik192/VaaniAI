@@ -1,13 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { BottomNav } from '../components/BottomNav';
+import { ErrorBanner } from '../components/Feedback';
 import { EmptyState } from '../components/Form';
 import { Icon } from '../components/Icon';
 import { Card, Screen } from '../components/Layout';
 import { TxnRow } from '../components/Rows';
 import { Pills } from '../components/Segmented';
 import { T } from '../components/Text';
-import { Txn } from '../data/sample';
+import { Txn } from '../data/types';
+import { errorText, useT } from '../i18n';
 import { dayLabel } from '../logic/dates';
 import { formatINR } from '../logic/money';
 import { useRouter } from '../navigation/Router';
@@ -18,53 +20,58 @@ type Filter = 'all' | 'bill' | 'payment' | 'khata';
 
 export function HistoryScreen() {
   const { colors } = useTheme();
+  const t = useT();
   const router = useRouter();
-  const { state, customerById } = useStore();
+  const { state, txns, customerById, refresh } = useStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
+  const { status, error } = state.sync;
 
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const list = state.txns
-      .filter(t => filter === 'all' || (filter === 'khata' ? t.kind === 'bill' && t.method === 'khata' : t.kind === filter))
-      .filter(t => {
+    const walkIn = t('common.walkIn').toLowerCase();
+    const list = txns
+      .filter(x => filter === 'all' || (filter === 'khata' ? x.kind === 'bill' && x.method === 'khata' : x.kind === filter))
+      .filter(x => {
         if (!needle) {
           return true;
         }
-        const name = customerById(t.customerId)?.name ?? 'walk-in';
-        return name.toLowerCase().includes(needle) || (t.billNo ?? '').includes(needle) || String(t.amount / 100).includes(needle);
-      })
-      .sort((a, b) => b.createdAt - a.createdAt);
+        const name = customerById(x.customerId)?.name.toLowerCase() ?? walkIn;
+        return name.includes(needle) || (x.billNo ?? '').includes(needle) || String(x.amount / 100).includes(needle);
+      });
     const out: { day: string; items: Txn[]; total: number }[] = [];
-    for (const t of list) {
-      const day = dayLabel(t.createdAt);
-      let g = out.find(x => x.day === day);
+    for (const x of list) {
+      const day = dayLabel(t, x.createdAt);
+      let g = out.find(d => d.day === day);
       if (!g) {
         g = { day, items: [], total: 0 };
         out.push(g);
       }
-      g.items.push(t);
-      g.total += t.kind === 'bill' ? t.amount : 0;
+      g.items.push(x);
+      g.total += x.kind === 'bill' ? x.amount : 0;
     }
     return out;
-  }, [state.txns, filter, q, customerById]);
+  }, [txns, filter, q, customerById, t]);
 
   return (
     <Screen
+      refreshing={status === 'loading'}
+      onRefresh={refresh}
       header={
         <View style={styles.header}>
-          <T variant="screenTitle">History</T>
-          <T variant="teTitle" color={colors.ink2}>
-            చరిత్ర
+          <T variant="screenTitle">{t('history.title')}</T>
+          <T variant="supporting" color={colors.ink2}>
+            {t('history.recentNote')}
           </T>
         </View>
       }
       bottomNav={<BottomNav active="history" onChange={router.setTab} />}>
+      {status === 'error' ? <ErrorBanner message={errorText(t, error)} onRetry={refresh} /> : null}
       <View style={[styles.search, { borderColor: colors.lineStrong, backgroundColor: colors.surface }]}>
         <Icon name="search" size={20} color={colors.ink2} />
         <TextInput
-          accessibilityLabel="Search bills and payments"
-          placeholder="Search name, bill no. or amount"
+          accessibilityLabel={t('history.search')}
+          placeholder={t('history.search')}
           placeholderTextColor={colors.ink2}
           value={q}
           onChangeText={setQ}
@@ -75,20 +82,19 @@ export function HistoryScreen() {
         value={filter}
         onChange={setFilter}
         options={[
-          { key: 'all', label: 'All' },
-          { key: 'bill', label: 'Bills' },
-          { key: 'payment', label: 'Payments' },
-          { key: 'khata', label: 'Khata' },
+          { key: 'all', label: t('history.all') },
+          { key: 'bill', label: t('history.bills') },
+          { key: 'payment', label: t('history.payments') },
+          { key: 'khata', label: t('history.khata') },
         ]}
       />
       {groups.length === 0 ? (
         <Card padded={false}>
           <EmptyState
             icon="history"
-            title={q ? 'Nothing found' : 'No entries yet'}
-            te="ఏమీ లేదు"
-            body={q ? 'Try another name or amount.' : 'Make your first voice bill.'}
-            action={q ? undefined : 'Create bill with voice'}
+            title={q ? t('history.nothingFound') : t('history.noEntries')}
+            body={q ? t('history.tryAnother') : t('home.noBillsBody')}
+            action={q ? undefined : t('home.voiceBill')}
             onAction={() => router.push({ name: 'recorder' })}
           />
         </Card>
@@ -100,16 +106,16 @@ export function HistoryScreen() {
                 {g.day.toUpperCase()}
               </T>
               <T variant="caption" color={colors.ink2}>
-                SALES {formatINR(g.total)}
+                {t('history.sales', { amount: formatINR(g.total) })}
               </T>
             </View>
             <Card padded={false}>
-              {g.items.map((t, i) => (
+              {g.items.map((x, i) => (
                 <TxnRow
-                  key={t.id}
-                  t={t}
+                  key={x.id}
+                  t={x}
                   first={i === 0}
-                  onPress={t.customerId ? () => router.push({ name: 'customer', id: t.customerId as string }) : undefined}
+                  onPress={x.customerId ? () => router.push({ name: 'customer', id: x.customerId as string }) : undefined}
                 />
               ))}
             </Card>
