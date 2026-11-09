@@ -32,6 +32,27 @@ export function SettingsScreen() {
 
   return (
     <Screen header={<AppHeader title={t('set.title')} onBack={router.back} />}>
+      {shop && !shop.upiId ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push({ name: 'upi' })}
+          style={({ pressed }) => [styles.upiBanner, { backgroundColor: pressed ? colors.surfaceMuted : colors.warningSoft, borderColor: colors.warning }]}>
+          <View style={[styles.upiWell, { backgroundColor: colors.surface }]}>
+            <Icon name="qr" size={22} color={colors.warningText} />
+          </View>
+          <View style={styles.flex}>
+            <T variant="sectionTitle" color={colors.warningText} style={styles.bold}>
+              {t('set.upiMissing')}
+            </T>
+            <T variant="supporting" color={colors.warningText}>
+              {t('set.upiMissingSub')}
+            </T>
+          </View>
+          <T variant="button" color={colors.primary}>
+            {t('home.setupAdd')}
+          </T>
+        </Pressable>
+      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${shop?.shopkeeperName ?? ''}, ${shop?.shopName ?? ''}. ${t('common.edit')}`}
@@ -62,14 +83,34 @@ export function SettingsScreen() {
       <SectionLabel>{t('set.shop')}</SectionLabel>
       <Card padded={false}>
         <SettingRow first icon="store" title={t('set.shopName')} value={shop?.shopName} onPress={() => router.push({ name: 'editProfile' })} />
+        <SettingRow icon="user" title={t('set.yourName')} value={shop?.shopkeeperName} onPress={() => router.push({ name: 'editProfile' })} />
         <SettingRow
           icon="qr"
           title={t('set.upiId')}
-          sub={t('set.upiSub')}
+          sub={shop?.upiId ? t('set.upiSub') : t('set.upiMissingSub')}
           value={shop?.upiId ?? t('set.notSet')}
-          onPress={() => router.push({ name: 'editProfile' })}
+          onPress={() => router.push({ name: 'upi' })}
         />
         <SettingRow icon="language" title={t('set.language')} value={lang?.native} onPress={() => setLangOpen(true)} />
+      </Card>
+
+      <SectionLabel>{t('set.voice')}</SectionLabel>
+      <Card padded={false}>
+        <SettingRow
+          first
+          icon="speaker"
+          title={t('set.readBack')}
+          sub={t('set.readBackSub')}
+          toggle={settings.readBack}
+          onToggle={v => updateSettings({ readBack: v })}
+        />
+        <SettingRow
+          icon="receipt"
+          title={t('set.readAll')}
+          sub={t('set.readAllSub')}
+          toggle={settings.readAll}
+          onToggle={v => updateSettings({ readAll: v })}
+        />
       </Card>
 
       <SectionLabel>{t('set.security')}</SectionLabel>
@@ -81,13 +122,6 @@ export function SettingsScreen() {
           sub={t('set.fingerprintSub')}
           toggle={settings.fingerprint}
           onToggle={v => updateSettings({ fingerprint: v })}
-        />
-        <SettingRow
-          icon="speaker"
-          title={t('set.readBack')}
-          sub={t('set.readBackSub')}
-          toggle={settings.readBack}
-          onToggle={v => updateSettings({ readBack: v })}
         />
       </Card>
 
@@ -166,6 +200,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   bold: { fontWeight: '700' },
   semibold: { fontWeight: '600' },
+  upiBanner: { borderWidth: 1, borderRadius: radii.md, padding: space[4], flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  upiWell: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   profile: { borderWidth: 1, borderRadius: radii.md, padding: space[4], flexDirection: 'row', alignItems: 'center', gap: space[3] },
   avatar: { width: 56, height: 56, borderRadius: radii.pill, alignItems: 'center', justifyContent: 'center' },
   editPill: { minHeight: 40, borderWidth: 1, borderRadius: radii.pill, paddingHorizontal: space[3], flexDirection: 'row', alignItems: 'center', gap: 6 },

@@ -10,22 +10,23 @@ import { useReadAloud } from './useReadAloud';
  *
  *   listening ──(shopkeeper goes quiet)──▶ thinking ──▶ speaking the reply
  *     ▲                                                     │
- *     ├── question ("How much sugar?") or nothing heard ◀──┤  (hands-free: listens again)
+ *     ├── question ("Price of oil and sugar?") or nothing ◀─┤  (hands-free: listens again)
  *     │                                                     ▼
- *     └──────────── No: "What should I change?" ◀──── confirm: list + total + old due,
- *                                                       "Are these correct?" → Yes / No
+ *     └──────────── No: "What should I change?" ◀──── confirm: "Ramesh, 3 items, 310 rupees,
+ *                                                       cash. Save?" → keeps listening:
+ *                                                       "yes" (spoken or tapped) → confirmed
  *
  * The server applies each answer to the bill (adds, corrections, removals, answers).
- * Nothing is saved here: "Yes" hands the bill to the Review screen.
+ * Nothing is saved here: "confirmed" hands the bill to the screen, which saves it.
  */
-export type ConversationPhase = 'starting' | 'listening' | 'thinking' | 'speaking' | 'confirm' | 'idle' | 'error';
+export type ConversationPhase = 'starting' | 'listening' | 'thinking' | 'speaking' | 'confirm' | 'confirmed' | 'idle' | 'error';
 
 export type ConversationError = { key: StringKey; canOpenSettings?: boolean };
 
 const SPEECH_LANG: Record<Language, string> = { te: 'te-IN', hi: 'hi-IN', en: 'en-IN' };
 const MAX_SILENT_TURNS = 3; // stop listening by itself after this many turns with nothing heard
 
-export function useConversation(opts: { token: string | null; language: Language; readBack: boolean; whatToChange: string }) {
+export function useConversation(opts: { token: string | null; language: Language; readBack: boolean; readAll: boolean; whatToChange: string }) {
   const [phase, setPhase] = useState<ConversationPhase>('starting');
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0.3);
@@ -33,6 +34,8 @@ export function useConversation(opts: { token: string | null; language: Language
   const [replyText, setReplyText] = useState<string | null>(null);
   const [heard, setHeard] = useState<string[]>([]);
   const [error, setError] = useState<ConversationError | null>(null);
+  // The read-back asked "Save?": Yes / Change stay on screen while the mic listens for the answer.
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
   const voice = useReadAloud(opts.token);
 
   // Values the engine reads at call time (avoids stale closures between its steps).
@@ -46,7 +49,7 @@ export function useConversation(opts: { token: string | null; language: Language
   lastBill.current = last?.state ?? null;
 
   useEffect(() => {
-    const e = createEngine({ cfg, setPhase, setSeconds, setLevel, setLast, setReplyText, setHeard, setError }, lastBill.current);
+    const e = createEngine({ cfg, setPhase, setSeconds, setLevel, setLast, setReplyText, setHeard, setError, setAwaitingConfirm }, lastBill.current);
     engine.current = e;
     e.start();
     return () => e.dispose();
@@ -64,6 +67,7 @@ export function useConversation(opts: { token: string | null; language: Language
     replyText,
     heard,
     error,
+    awaitingConfirm,
     maxSeconds: MAX_SECONDS,
     /** Mic button: finish now while listening, otherwise start listening. */
     mic: useCallback(() => engine.current?.mic(), []),
@@ -81,6 +85,7 @@ type Setters = {
     token: string | null;
     language: Language;
     readBack: boolean;
+    readAll: boolean;
     whatToChange: string;
     play: (text: string, language?: string | null) => Promise<void>;
     stopVoice: () => void;
@@ -92,6 +97,7 @@ type Setters = {
   setReplyText: (s: string | null) => void;
   setHeard: (f: (h: string[]) => string[]) => void;
   setError: (e: ConversationError | null) => void;
+  setAwaitingConfirm: (v: boolean) => void;
 };
 
 function createEngine(s: Setters, initialBill: TurnState | null) {
@@ -100,12 +106,19 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
   let listening = false;
   let bill: TurnState | null = initialBill;
   let silentTurns = 0;
+  let awaiting = false; // listening for the answer to "Save?"
   let upload: AbortController | null = null;
 
   const go = (p: ConversationPhase) => {
     phase = p;
     if (alive) {
       s.setPhase(p);
+    }
+  };
+  const await_ = (v: boolean) => {
+    awaiting = v;
+    if (alive) {
+      s.setAwaitingConfirm(v);
     }
   };
   const fail = (err: ConversationError) => {
@@ -170,10 +183,15 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
     }
     listening = false;
     await stopRecording();
-    if (alive) {
-      s.setError({ key: 'conv.noSpeech' });
-      go('idle');
+    if (!alive) {
+      return;
     }
+    if (awaiting) {
+      go('confirm'); // no answer to "Save?": the Yes / Change buttons are still there
+      return;
+    }
+    s.setError({ key: 'conv.noSpeech' });
+    go('idle');
   }
 
   async function finishListening() {
@@ -205,7 +223,7 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
     // A dropped connection gets one automatic retry (the recording is still on the phone).
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
       try {
-        res = await voiceTurn(token, { fileUri, state: bill, language: s.cfg.current.language }, controller.signal);
+        res = await voiceTurn(token, { fileUri, state: bill, language: s.cfg.current.language, readAll: s.cfg.current.readAll }, controller.signal);
       } catch (e) {
         const retry = attempt === 0 && isApiError(e) && e.kind === 'network' && alive;
         if (retry) {
@@ -226,6 +244,16 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
     if (!alive) {
       return;
     }
+    if (awaiting && (!res.heard || res.reply.kind === 'retry')) {
+      go('confirm'); // nothing clear in answer to "Save?": keep the bill and the buttons
+      return;
+    }
+    if (res.reply.kind === 'confirmed') {
+      await_(false);
+      go('confirmed');
+      return;
+    }
+    await_(false);
     bill = res.state;
     s.setLast(res);
     if (res.heard) {
@@ -239,7 +267,10 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
       return;
     }
     if (res.reply.kind === 'confirm') {
+      await_(true);
       go('confirm');
+      await pause(250);
+      listen(); // hands-free: "yes" saves, or say what to change
     } else if (silentTurns >= MAX_SILENT_TURNS) {
       s.setError({ key: 'conv.noSpeech' });
       go('idle');
@@ -264,8 +295,13 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
       }
     },
     no: async () => {
-      if (phase !== 'confirm') {
+      if (!awaiting || phase === 'thinking') {
         return;
+      }
+      await_(false);
+      if (listening) {
+        listening = false;
+        await stopRecording(); // drop what was being recorded
       }
       await say(s.cfg.current.whatToChange);
       if (alive) {

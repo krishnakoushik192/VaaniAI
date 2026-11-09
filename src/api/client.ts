@@ -208,7 +208,10 @@ export const api = {
   login: (mobileNumber: string, passcode: string) =>
     request<AuthResponse>('/auth/login', { method: 'POST', json: { mobileNumber, passcode } }),
 
-  register: (input: { shopName: string; shopkeeperName: string; mobileNumber: string; passcode: string; language: Language }) =>
+  /** Whether this mobile number already has a shop: decides "enter passcode" vs "create passcode". */
+  checkMobile: (mobileNumber: string) => request<{ exists: boolean }>('/auth/check', { method: 'POST', json: { mobileNumber } }),
+
+  register: (input: { shopName: string; shopkeeperName: string; mobileNumber: string; passcode: string; language: Language; upiId?: string }) =>
     request<AuthResponse>('/auth/register', { method: 'POST', json: input }),
 
   me: (token: string) => request<{ shopkeeper: ServerShop }>('/shopkeeper/me', { token }),
@@ -289,13 +292,14 @@ export type TurnResponse = {
   customer: { id: string; name: string; pastDues: number } | null;
   spokenCustomerName: string | null;
   totals: { subtotal: number; total: number };
-  reply: { kind: 'confirm' | 'question' | 'retry'; text: string };
+  /** confirmed = the shopkeeper said "yes" to the read-back: save the bill. */
+  reply: { kind: 'confirm' | 'question' | 'retry' | 'confirmed'; text: string };
 };
 
 /** POST /api/voice/turn: apply what the shopkeeper said (recording or typed text) to the bill. */
 export function voiceTurn(
   token: string,
-  input: { fileUri?: string; text?: string; state: TurnState | null; language: Language },
+  input: { fileUri?: string; text?: string; state: TurnState | null; language: Language; readAll?: boolean },
   signal?: AbortSignal,
 ) {
   if (input.fileUri) {
@@ -305,12 +309,13 @@ export function voiceTurn(
       form.append('state', JSON.stringify(input.state)); // left out on the first turn = new bill
     }
     form.append('language', input.language);
+    form.append('readAll', input.readAll ? 'true' : 'false');
     return request<TurnResponse>('/voice/turn', { method: 'POST', token, form, timeoutMs: VOICE_TIMEOUT_MS, signal });
   }
   return request<TurnResponse>('/voice/turn', {
     method: 'POST',
     token,
-    json: { text: input.text, state: input.state, language: input.language },
+    json: { text: input.text, state: input.state, language: input.language, readAll: !!input.readAll },
     timeoutMs: VOICE_TIMEOUT_MS,
     signal,
   });

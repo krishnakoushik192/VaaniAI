@@ -11,8 +11,6 @@ import { useRouter } from '../navigation/Router';
 import { useStore } from '../store/AppStore';
 import { radii, space, useTheme } from '../theme';
 
-const UPI_RE = /^[a-zA-Z0-9._-]{2,}@[a-zA-Z]{2,}$/;
-
 export function EditProfileScreen() {
   const { colors, isDark } = useTheme();
   const t = useT();
@@ -22,7 +20,6 @@ export function EditProfileScreen() {
 
   const [shopName, setShopName] = useState(p?.shopName ?? '');
   const [ownerName, setOwnerName] = useState(p?.shopkeeperName ?? '');
-  const [upiId, setUpiId] = useState(p?.upiId ?? '');
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,10 +27,9 @@ export function EditProfileScreen() {
   const errors = {
     shopName: shopName.trim().length < 2 ? t('prof.errShop') : undefined,
     ownerName: ownerName.trim().length < 2 ? t('prof.errName') : undefined,
-    upiId: upiId && !UPI_RE.test(upiId.trim()) ? t('prof.errUpi') : undefined,
   };
   const valid = !Object.values(errors).some(Boolean);
-  const changed = shopName !== (p?.shopName ?? '') || ownerName !== (p?.shopkeeperName ?? '') || upiId !== (p?.upiId ?? '');
+  const changed = shopName !== (p?.shopName ?? '') || ownerName !== (p?.shopkeeperName ?? '');
 
   const save = async () => {
     setTried(true);
@@ -43,7 +39,7 @@ export function EditProfileScreen() {
     setSaving(true);
     setError(null);
     try {
-      await updateProfile({ shopName: shopName.trim(), shopkeeperName: ownerName.trim(), upiId: upiId.trim() });
+      await updateProfile({ shopName: shopName.trim(), shopkeeperName: ownerName.trim() });
       router.back();
     } catch (e) {
       setError(errorText(t, e));
@@ -90,15 +86,6 @@ export function EditProfileScreen() {
           error={tried ? errors.ownerName : undefined}
         />
         <TextField label={t('prof.mobile')} value={p?.mobileNumber ?? ''} onChangeText={() => {}} prefix="+91" editable={false} help={t('prof.mobileHelp')} />
-        <TextField
-          label={t('prof.upiId')}
-          value={upiId}
-          onChangeText={setUpiId}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          error={tried ? errors.upiId : undefined}
-          help={t('prof.upiHelp')}
-        />
       </Screen>
     </View>
   );

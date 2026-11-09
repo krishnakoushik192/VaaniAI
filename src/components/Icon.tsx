@@ -35,7 +35,8 @@ export type IconName =
   | 'refresh'
   | 'logout'
   | 'speaker'
-  | 'stop';
+  | 'stop'
+  | 'settings';
 
 type Props = { name: IconName; size?: number; color: string; strokeWidth?: number };
 
@@ -174,5 +175,15 @@ function render(name: IconName, p: object) {
       return <Path d="M20 12a8 8 0 01-14 5.3M4 12A8 8 0 0118 6.7M18 3v4h-4M6 21v-4h4" {...p} />;
     case 'logout':
       return <Path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10" {...p} />;
+    case 'settings':
+      return (
+        <>
+          <Path
+            d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"
+            {...p}
+          />
+          <Circle cx={12} cy={12} r={3} {...p} />
+        </>
+      );
   }
 }

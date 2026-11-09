@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { TurnItem } from '../api/client';
 import { Button } from '../components/Button';
@@ -8,7 +8,7 @@ import { T } from '../components/Text';
 import { Waveform } from '../components/Waveform';
 import { TFn, useT } from '../i18n';
 import { mmss } from '../logic/dates';
-import { BillItem, clientId, formatINR } from '../logic/money';
+import { BillItem, billTotals, clientId, formatINR } from '../logic/money';
 import { useConversation } from '../logic/useConversation';
 import { useRouter } from '../navigation/Router';
 import { BillDraft, useStore } from '../store/AppStore';
@@ -35,25 +35,32 @@ export function RecorderScreen() {
   const { colors } = useTheme();
   const t = useT();
   const router = useRouter();
-  const { state, newDraft, customerById, refresh } = useStore();
+  const { state, newDraft, customerById, refresh, saveBill } = useStore();
   const [base] = useState(() => newDraft());
+  const [saving, setSaving] = useState(false);
   const conv = useConversation({
     token: state.token,
     language: state.language,
     readBack: state.settings.readBack,
+    readAll: state.settings.readAll,
     whatToChange: t('conv.whatToChange'),
   });
   const { phase, bill } = conv;
   const items = bill?.items ?? [];
-  const asked = bill?.question?.itemId;
+  const asking = !!bill?.question; // every item still missing something is highlighted
+  const confirming = conv.awaitingConfirm || phase === 'confirm' || phase === 'confirmed';
 
   const close = () => {
     conv.cancel();
     router.back();
   };
 
-  const yes = () => {
-    if (!bill) {
+  /**
+   * "Yes" (tapped or spoken). A clear bill is saved right here: the payment method was said,
+   * the customer is known (khata) and nothing needs checking. Otherwise Review opens.
+   */
+  const yes = async () => {
+    if (!bill || saving) {
       return;
     }
     conv.cancel();
@@ -72,8 +79,38 @@ export function RecorderScreen() {
       spokenLanguage: conv.detectedLanguage ?? undefined,
       spoken: true,
     };
-    router.replace({ name: 'review', draft });
+    const method = bill.method;
+    const total = billTotals(draft.items, draft.discount).total;
+    const unclear = !method || draft.items.some(i => i.needsCheck) || (!customerId && !!draft.spokenCustomerName) || (method === 'khata' && !customerId);
+    if (unclear || (method === 'upi' && !state.shop?.upiId)) {
+      router.replace({ name: 'review', draft });
+      return;
+    }
+    if (method === 'upi') {
+      router.replace({ name: 'payment', draft, total });
+      return;
+    }
+    if (method === 'cash' && state.settings.fingerprint) {
+      router.replace({ name: 'cashConfirm', draft, total }); // fingerprint check stays
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveBill(draft, method);
+      router.resetTo({ name: 'result', kind: method === 'khata' ? 'khata' : 'paid', amount: total, customerId, method });
+    } catch {
+      router.replace({ name: 'review', draft }); // not saved: Review shows the bill and can retry
+    }
   };
+
+  // Spoken "yes" to the read-back.
+  const yesRef = useRef(yes);
+  yesRef.current = yes;
+  useEffect(() => {
+    if (phase === 'confirmed') {
+      yesRef.current();
+    }
+  }, [phase]);
 
   const typeInstead = () => {
     conv.cancel();
@@ -87,7 +124,7 @@ export function RecorderScreen() {
       ? t('rec.working')
       : phase === 'speaking'
       ? t('conv.speaking')
-      : phase === 'confirm'
+      : phase === 'confirm' || phase === 'confirmed'
       ? t('conv.confirmTitle')
       : phase === 'error'
       ? t('rec.problem')
@@ -120,11 +157,16 @@ export function RecorderScreen() {
               {overline}
             </T>
           ) : null}
-          {phase === 'confirm' ? (
-            // The list below already shows everything that was read out: just ask.
-            <T variant="screenTitle" color={colors.onPremium}>
-              {t('conv.confirmQ')}
-            </T>
+          {confirming ? (
+            // The short read-back ("Ramesh, 3 items, 310 rupees, cash. Save?"); the list below has the items.
+            <>
+              <T variant="screenTitle" color={colors.onPremium}>
+                {conv.replyText || t('conv.confirmQ')}
+              </T>
+              <T variant="supporting" color={colors.premiumMuted}>
+                {t('conv.sayYes')}
+              </T>
+            </>
           ) : conv.replyText ? (
             <T variant="body" color={colors.onPremium} numberOfLines={4}>
               {conv.replyText}
@@ -175,7 +217,7 @@ export function RecorderScreen() {
               return (
                 <View
                   key={i.id}
-                  style={[styles.item, { borderColor: i.id === asked ? colors.premiumAccent : colors.premiumLine }, i.id === asked && styles.asked]}>
+                  style={[styles.item, { borderColor: asking && missing ? colors.premiumAccent : colors.premiumLine }, asking && missing && styles.asked]}>
                   <View style={styles.flex}>
                     <T variant="bodyMedium" color={colors.onPremium} numberOfLines={1}>
                       {i.localName || i.name}
@@ -211,10 +253,31 @@ export function RecorderScreen() {
         </ScrollView>
 
         {/* Controls for the current step */}
-        {phase === 'confirm' ? (
-          <View style={styles.row}>
-            <Button label={t('conv.no')} variant="onPremium" style={styles.flex} onPress={conv.no} />
-            <Button label={t('conv.yes')} icon="check" style={styles.flex} onPress={yes} />
+        {saving ? (
+          <View style={styles.status}>
+            <ActivityIndicator color={colors.premiumAccent} />
+            <T variant="bodyMedium" color={colors.onPremium}>
+              {t('common.saving')}
+            </T>
+          </View>
+        ) : confirming ? (
+          <View style={styles.listen}>
+            {phase === 'listening' ? (
+              <View style={styles.meter}>
+                <Waveform active level={conv.level} />
+                <T variant="caption" color={colors.premiumMuted} style={styles.noCaps}>
+                  {t('conv.listeningYes')}
+                </T>
+              </View>
+            ) : phase === 'thinking' ? (
+              <View style={styles.statusSm}>
+                <ActivityIndicator color={colors.premiumAccent} />
+              </View>
+            ) : null}
+            <View style={styles.row}>
+              <Button label={t('conv.no')} variant="onPremium" style={styles.flex} onPress={conv.no} disabled={phase === 'thinking'} />
+              <Button label={t('conv.yes')} icon="check" style={styles.flex2} onPress={yes} />
+            </View>
           </View>
         ) : phase === 'thinking' ? (
           <View style={styles.status}>
@@ -276,6 +339,8 @@ export function RecorderScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  flex2: { flex: 2 },
+  statusSm: { minHeight: 32, alignItems: 'center', justifyContent: 'center' },
   center: { textAlign: 'center' },
   noCaps: { letterSpacing: 0 },
   num: { fontVariant: ['tabular-nums'] },

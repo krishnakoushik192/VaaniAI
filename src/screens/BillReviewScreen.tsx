@@ -6,12 +6,13 @@ import { Icon } from '../components/Icon';
 import { AppHeader, Card, Screen } from '../components/Layout';
 import { Segmented } from '../components/Segmented';
 import { CustomerSheet } from '../components/Sheet';
+import { UpiSheet } from '../components/UpiSheet';
 import { T } from '../components/Text';
 import { errorText, TFn, useT } from '../i18n';
 import { BillItem, billTotals, formatINR, lineTotal } from '../logic/money';
 import { useReadAloud } from '../logic/useReadAloud';
 import { BillDraft, PaymentMethod, useRouter } from '../navigation/Router';
-import { initials, useStore } from '../store/AppStore';
+import { defaultMethod, initials, useStore } from '../store/AppStore';
 import { radii, space, useTheme } from '../theme';
 
 export const unitText = (t: TFn, unit: string) => {
@@ -27,9 +28,11 @@ export function BillReviewScreen({ draft: initial }: { draft: BillDraft }) {
   const { colors } = useTheme();
   const t = useT();
   const router = useRouter();
-  const { customerById, saveBill } = useStore();
+  const { state, customerById, saveBill } = useStore();
+  const hasUpi = !!state.shop?.upiId;
+  const [upiOpen, setUpiOpen] = useState(false);
   const [draft, setDraft] = useState(initial);
-  const [method, setMethod] = useState<PaymentMethod>(initial.method ?? 'upi');
+  const [method, setMethod] = useState<PaymentMethod>(() => initial.method ?? defaultMethod(state.settings.lastMethod, hasUpi));
   const [pickOpen, setPickOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +48,18 @@ export function BillReviewScreen({ draft: initial }: { draft: BillDraft }) {
     setDraft(d => ({ ...d, items: d.items.map(x => (x.id === it.id ? { ...x, needsCheck: false, note: undefined } : x)) }));
   };
 
+  const pickMethod = (m: PaymentMethod) => {
+    setMethod(m);
+    if (m === 'upi' && !hasUpi) {
+      setUpiOpen(true); // no UPI ID yet: add it here, the bill stays as it is
+    }
+  };
+
   const save = async () => {
+    if (method === 'upi' && !hasUpi) {
+      setUpiOpen(true);
+      return;
+    }
     if (method === 'upi') {
       router.push({ name: 'payment', draft, total: totals.total });
       return;
@@ -221,7 +235,7 @@ export function BillReviewScreen({ draft: initial }: { draft: BillDraft }) {
         <Segmented
           label={t('review.paymentMethod')}
           value={method}
-          onChange={setMethod}
+          onChange={pickMethod}
           options={[
             { key: 'cash', label: t('method.cash') },
             { key: 'upi', label: t('method.upi') },
@@ -234,6 +248,19 @@ export function BillReviewScreen({ draft: initial }: { draft: BillDraft }) {
           </T>
         ) : null}
       </View>
+
+      <UpiSheet
+        visible={upiOpen}
+        onClose={() => setUpiOpen(false)}
+        onSaved={() => {
+          setUpiOpen(false);
+          router.push({ name: 'payment', draft, total: totals.total });
+        }}
+        onCash={() => {
+          setUpiOpen(false);
+          setMethod('cash');
+        }}
+      />
 
       <CustomerSheet
         visible={pickOpen}

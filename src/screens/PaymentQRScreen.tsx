@@ -85,7 +85,7 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
       header={<AppHeader title={t('pay.title')} onBack={router.back} />}
       footer={
         !upiId ? (
-          <Button label={t('pay.addUpi')} onPress={() => router.push({ name: 'editProfile' })} />
+          <Button label={t('pay.addUpi')} onPress={() => router.push({ name: 'upi' })} />
         ) : phase === 'notReceived' ? (
           <>
             <Button label={t('pay.showAgain')} icon="qr" onPress={showAgain} disabled={saving} />
