@@ -25,6 +25,7 @@ export type Route =
   | { name: 'recordPayment'; customerId?: string }
   | { name: 'settings' }
   | { name: 'editProfile' }
+  | { name: 'upi' }
   | { name: 'help' };
 
 type Entry = { key: number; route: Route };

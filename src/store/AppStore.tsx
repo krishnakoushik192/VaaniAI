@@ -23,7 +23,14 @@ export type BillDraft = {
 };
 
 export type SyncStatus = 'idle' | 'loading' | 'ok' | 'error';
-export type Settings = { fingerprint: boolean; readBack: boolean };
+export type Settings = {
+  fingerprint: boolean;
+  readBack: boolean;
+  /** Voice read-back names every item (off: only the count, total and payment method). */
+  readAll: boolean;
+  /** Payment method of the last saved bill: the next bill starts with it. */
+  lastMethod?: PaymentMethod;
+};
 
 type State = {
   booted: boolean;
@@ -45,7 +52,7 @@ const initialState: State = {
   token: null,
   shop: null,
   serverCustomers: [],
-  settings: { fingerprint: false, readBack: true },
+  settings: { fingerprint: false, readBack: true, readAll: false },
   nextBillNo: 1,
   sync: { status: 'idle', error: null },
   sessionExpired: false,
@@ -55,6 +62,7 @@ type Action =
   | { type: 'boot'; patch: Partial<State> }
   | { type: 'language'; language: Language }
   | { type: 'onboard'; language: Language }
+  | { type: 'chooseLanguageAgain' }
   | { type: 'loggedIn'; token: string; shop: Shop }
   | { type: 'logout'; expired: boolean }
   | { type: 'syncStart' }
@@ -78,6 +86,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, language: a.language };
     case 'onboard':
       return { ...s, onboarded: true, language: a.language };
+    case 'chooseLanguageAgain':
+      return { ...s, onboarded: false };
     case 'loggedIn':
       return { ...s, token: a.token, shop: a.shop, serverCustomers: [], sessionExpired: false, sync: { status: 'idle', error: null } };
     case 'logout':
@@ -263,13 +273,17 @@ function useStoreValue() {
   }, []);
 
   const onboard = useCallback((language: Language) => dispatch({ type: 'onboard', language }), []);
+  /** Back from the mobile-number step: show the language list again. */
+  const chooseLanguageAgain = useCallback(() => dispatch({ type: 'chooseLanguageAgain' }), []);
+
+  const checkMobile = useCallback(async (mobileNumber: string) => (await api.checkMobile(mobileNumber)).exists, []);
 
   const login = useCallback(async (mobileNumber: string, passcode: string) => {
     const r = await api.login(mobileNumber, passcode);
     dispatch({ type: 'loggedIn', token: r.token, shop: toShop(r.shopkeeper) });
   }, []);
 
-  const register = useCallback(async (input: { shopName: string; shopkeeperName: string; mobileNumber: string; passcode: string }) => {
+  const register = useCallback(async (input: { shopName: string; shopkeeperName: string; mobileNumber: string; passcode: string; upiId?: string }) => {
     const r = await api.register({ ...input, language: ref.current.language });
     dispatch({ type: 'loggedIn', token: r.token, shop: toShop(r.shopkeeper) });
   }, []);
@@ -308,6 +322,7 @@ function useStoreValue() {
     });
     dispatch({ type: 'upsertCustomer', customer: r.customer, shop: toShop(r.shopkeeper) });
     dispatch({ type: 'billNo' });
+    dispatch({ type: 'settings', patch: { lastMethod: method } });
   }, []);
 
   const recordPayment = useCallback(async (customerId: string, amount: number, method: 'cash' | 'upi', id: string) => {
@@ -348,6 +363,8 @@ function useStoreValue() {
       refresh,
       setLanguage,
       onboard,
+      chooseLanguageAgain,
+      checkMobile,
       login,
       register,
       logout,
@@ -359,7 +376,7 @@ function useStoreValue() {
       newDraft,
       customerById,
     }),
-    [state, customers, txns, refresh, setLanguage, onboard, login, register, logout, updateProfile, updateSettings, addCustomer, saveBill, recordPayment, newDraft, customerById],
+    [state, customers, txns, refresh, setLanguage, onboard, chooseLanguageAgain, checkMobile, login, register, logout, updateProfile, updateSettings, addCustomer, saveBill, recordPayment, newDraft, customerById],
   );
 }
 
@@ -406,5 +423,12 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('') || '?';
+
+/** A bill starts with the last cash/UPI method used, but never UPI while no UPI ID is saved. */
+export function defaultMethod(last: PaymentMethod | undefined, hasUpi: boolean): PaymentMethod {
+  // khata needs a customer, so it is never the starting choice
+  const m = (last !== 'khata' && last) || (hasUpi ? 'upi' : 'cash');
+  return m === 'upi' && !hasUpi ? 'cash' : m;
+}
 
 export const methodLabel = (t: TFn, m: PaymentMethod) => (m === 'cash' ? t('method.cash') : m === 'upi' ? t('method.upiLong') : t('method.khata'));

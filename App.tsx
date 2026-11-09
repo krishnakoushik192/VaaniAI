@@ -24,6 +24,7 @@ import { RecordPaymentScreen } from './src/screens/RecordPaymentScreen';
 import { RecorderScreen } from './src/screens/RecorderScreen';
 import { ResultScreen } from './src/screens/ResultScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { UpiScreen } from './src/screens/UpiScreen';
 import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import { AppStoreProvider, useStore } from './src/store/AppStore';
 import { ThemeProvider, useTheme } from './src/theme';
@@ -57,10 +58,12 @@ function renderRoute(route: Route) {
       return <EditProfileScreen />;
     case 'help':
       return <HelpScreen />;
+    case 'upi':
+      return <UpiScreen />;
   }
 }
 
-/** Start-up → choose language (first run) → log in → the app. */
+/** Start-up → choose language (first run) → mobile, passcode (and shop setup for new shops) → the app. */
 function Root() {
   const { isDark } = useTheme();
   const { state } = useStore();
