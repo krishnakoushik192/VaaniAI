@@ -48,6 +48,19 @@ export function RecorderScreen() {
   const { phase, bill } = conv;
   const items = bill?.items ?? [];
   const asking = !!bill?.question; // every item still missing something is highlighted
+  const check = bill?.check ?? null; // "did you mean?": a probably-misheard price or customer
+  const checkOptions: { label: string; choice: 0 | 1 }[] =
+    check?.kind === 'amount'
+      ? [
+          { label: formatINR(check.options[1]), choice: 1 }, // the likely one first
+          { label: formatINR(check.options[0]), choice: 0 },
+        ]
+      : check?.kind === 'customer'
+      ? [
+          { label: customerById(check.options[1])?.name ?? '', choice: 1 as const },
+          { label: customerById(check.options[0])?.name ?? conv.customer?.name ?? '', choice: 0 as const },
+        ].filter(o => o.label)
+      : [];
   const confirming = conv.awaitingConfirm || phase === 'confirm' || phase === 'confirmed';
 
   const close = () => {
@@ -81,17 +94,13 @@ export function RecorderScreen() {
     };
     const method = bill.method;
     const total = billTotals(draft.items, draft.discount).total;
-    const unclear = !method || draft.items.some(i => i.needsCheck) || (!customerId && !!draft.spokenCustomerName) || (method === 'khata' && !customerId);
+    const unclear = !method || !!bill.check || draft.items.some(i => i.needsCheck) || (!customerId && !!draft.spokenCustomerName) || (method === 'khata' && !customerId);
     if (unclear || (method === 'upi' && !state.shop?.upiId)) {
       router.replace({ name: 'review', draft });
       return;
     }
     if (method === 'upi') {
       router.replace({ name: 'payment', draft, total });
-      return;
-    }
-    if (method === 'cash' && state.settings.fingerprint) {
-      router.replace({ name: 'cashConfirm', draft, total }); // fingerprint check stays
       return;
     }
     setSaving(true);
@@ -126,6 +135,8 @@ export function RecorderScreen() {
       ? t('conv.speaking')
       : phase === 'confirm' || phase === 'confirmed'
       ? t('conv.confirmTitle')
+      : check && phase !== 'error'
+      ? t('conv.didYouMean')
       : phase === 'error'
       ? t('rec.problem')
       : phase === 'starting'
@@ -212,7 +223,7 @@ export function RecorderScreen() {
             </T>
           ) : (
             items.map(i => {
-              const missing = i.qty == null || i.rate == null;
+              const missing = i.qty == null || i.rate == null || (check?.kind === 'amount' && check.itemId === i.id);
               const line = i.qty != null && i.rate != null ? formatINR(Math.round(i.qty * i.rate)) : '—';
               return (
                 <View
@@ -260,14 +271,40 @@ export function RecorderScreen() {
               {t('common.saving')}
             </T>
           </View>
+        ) : checkOptions.length === 2 && phase !== 'thinking' && !confirming ? (
+          <View style={styles.listen}>
+            <View style={styles.stopRow}>
+              <T variant="supporting" color={colors.premiumMuted} style={[styles.center, styles.flex]}>
+                {phase === 'listening' ? t('conv.listeningChoice') : t('conv.tapOrSay')}
+              </T>
+              {phase === 'listening' ? (
+                <Button label={t('conv.stop')} icon="stop" variant="onPremium" small onPress={conv.mic} accessibilityHint={t('conv.stopHint')} />
+              ) : null}
+            </View>
+            <View style={styles.row}>
+              {checkOptions.map((o, n) => (
+                <Button
+                  key={o.choice}
+                  label={o.label}
+                  variant={n === 0 ? 'primary' : 'onPremium'}
+                  style={styles.flex}
+                  accessibilityHint={t('conv.chooseHint')}
+                  onPress={() => conv.choose(o.choice)}
+                />
+              ))}
+            </View>
+          </View>
         ) : confirming ? (
           <View style={styles.listen}>
             {phase === 'listening' ? (
-              <View style={styles.meter}>
-                <Waveform active level={conv.level} />
-                <T variant="caption" color={colors.premiumMuted} style={styles.noCaps}>
-                  {t('conv.listeningYes')}
-                </T>
+              <View style={styles.stopRow}>
+                <View style={[styles.meter, styles.flex]}>
+                  <Waveform active level={conv.level} />
+                  <T variant="caption" color={colors.premiumMuted} style={styles.noCaps}>
+                    {t('conv.listeningYes')}
+                  </T>
+                </View>
+                <Button label={t('conv.stop')} icon="stop" variant="onPremium" small onPress={conv.mic} accessibilityHint={t('conv.stopHint')} />
               </View>
             ) : phase === 'thinking' ? (
               <View style={styles.statusSm}>
@@ -340,6 +377,7 @@ export function RecorderScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   flex2: { flex: 2 },
+  stopRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   statusSm: { minHeight: 32, alignItems: 'center', justifyContent: 'center' },
   center: { textAlign: 'center' },
   noCaps: { letterSpacing: 0 },

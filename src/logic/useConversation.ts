@@ -25,6 +25,9 @@ export type ConversationError = { key: StringKey; canOpenSettings?: boolean };
 
 const SPEECH_LANG: Record<Language, string> = { te: 'te-IN', hi: 'hi-IN', en: 'en-IN' };
 const MAX_SILENT_TURNS = 3; // stop listening by itself after this many turns with nothing heard
+/** Listening for the answer to "Save?" or "60 or 16?": a short reply, so stop sooner. */
+const SHORT_ANSWER = { riseDb: 12, quietMs: 800, noSpeechMs: 6000 };
+const SHORT_ANSWER_MAX_S = 6;
 
 export function useConversation(opts: { token: string | null; language: Language; readBack: boolean; readAll: boolean; whatToChange: string }) {
   const [phase, setPhase] = useState<ConversationPhase>('starting');
@@ -73,6 +76,8 @@ export function useConversation(opts: { token: string | null; language: Language
     mic: useCallback(() => engine.current?.mic(), []),
     /** "No": ask what to change, then listen. */
     no: useCallback(() => engine.current?.no(), []),
+    /** Answer "did you mean?" by tapping: 0 = what was heard, 1 = the likely other one. */
+    choose: useCallback((choice: 0 | 1) => engine.current?.choose(choice), []),
     /** Stop speaking and move on. */
     skip: useCallback(() => engine.current?.skip(), []),
     /** Stop everything (leaving the screen, or Yes). */
@@ -151,7 +156,8 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
       fail({ key: 'err.micDenied', canOpenSettings: perm === 'blocked' });
       return;
     }
-    const detector = new SpeechDetector();
+    const short = awaiting || !!bill?.check; // "yes" / "sixty": cut off quickly
+    const detector = new SpeechDetector(short ? SHORT_ANSWER : undefined);
     listening = true;
     go('listening');
     try {
@@ -163,7 +169,7 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
         if (db != null && db > -160) {
           s.setLevel(Math.max(0.15, Math.min(1, (db + 60) / 60)));
         }
-        const decision = sec >= MAX_SECONDS ? 'done' : detector.push(db, sec * 1000);
+        const decision = sec >= (short ? SHORT_ANSWER_MAX_S : MAX_SECONDS) ? 'done' : detector.push(db, sec * 1000);
         if (decision === 'done') {
           finishListening();
         } else if (decision === 'noSpeech') {
@@ -210,7 +216,8 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
     await sendTurn(uri);
   }
 
-  async function sendTurn(fileUri: string) {
+  /** A recording, or a tapped answer to "did you mean?" (sent without audio). */
+  async function sendTurn(fileUri: string | null, choose?: 0 | 1) {
     const token = s.cfg.current.token;
     if (!token) {
       fail({ key: 'err.sessionExpired' });
@@ -223,7 +230,11 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
     // A dropped connection gets one automatic retry (the recording is still on the phone).
     for (let attempt = 0; attempt < 2 && !res; attempt++) {
       try {
-        res = await voiceTurn(token, { fileUri, state: bill, language: s.cfg.current.language, readAll: s.cfg.current.readAll }, controller.signal);
+        res = await voiceTurn(
+          token,
+          { fileUri: fileUri ?? undefined, choose, state: bill, language: s.cfg.current.language, readAll: s.cfg.current.readAll },
+          controller.signal,
+        );
       } catch (e) {
         const retry = attempt === 0 && isApiError(e) && e.kind === 'network' && alive;
         if (retry) {
@@ -258,7 +269,7 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
     s.setLast(res);
     if (res.heard) {
       silentTurns = 0;
-      s.setHeard(h => [...h, res.transcript]);
+      s.setHeard(h => (res.transcript ? [...h, res.transcript] : h)); // a tapped answer has no transcript
     } else {
       silentTurns++;
     }
@@ -310,6 +321,19 @@ function createEngine(s: Setters, initialBill: TurnState | null) {
       }
     },
     skip: () => s.cfg.current.stopVoice(),
+    /** Tapped answer to "did you mean?": 0 = what was heard, 1 = the other one. */
+    choose: async (choice: 0 | 1) => {
+      if (!bill?.check || phase === 'thinking') {
+        return;
+      }
+      s.cfg.current.stopVoice();
+      if (listening) {
+        listening = false;
+        await stopRecording(); // drop the half-spoken answer: the tap wins
+      }
+      silentTurns = 0;
+      await sendTurn(null, choice);
+    },
     dispose: () => {
       alive = false;
       listening = false;

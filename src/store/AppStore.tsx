@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { api, ApiError, isApiError, ServerCustomer, setUnauthorizedHandler, toCustomer, toShop, toTxns } from '../api/client';
 import type { Customer, Language, PaymentMethod, Shop, Txn } from '../data/types';
 import { LanguageProvider, TFn } from '../i18n';
+import type { SavedBill } from '../logic/invoice';
 import { BillItem, clientId } from '../logic/money';
 
 // App state backed by the Vaani API. Screens only use the hooks/functions below.
@@ -24,7 +25,6 @@ export type BillDraft = {
 
 export type SyncStatus = 'idle' | 'loading' | 'ok' | 'error';
 export type Settings = {
-  fingerprint: boolean;
   readBack: boolean;
   /** Voice read-back names every item (off: only the count, total and payment method). */
   readAll: boolean;
@@ -43,6 +43,8 @@ type State = {
   nextBillNo: number;
   sync: { status: SyncStatus; error: ApiError | null };
   sessionExpired: boolean;
+  /** The bill saved last (this session only), for "Share invoice" on the Result screen. */
+  lastBill: SavedBill | null;
 };
 
 const initialState: State = {
@@ -52,10 +54,11 @@ const initialState: State = {
   token: null,
   shop: null,
   serverCustomers: [],
-  settings: { fingerprint: false, readBack: true, readAll: false },
+  settings: { readBack: true, readAll: false },
   nextBillNo: 1,
   sync: { status: 'idle', error: null },
   sessionExpired: false,
+  lastBill: null,
 };
 
 type Action =
@@ -71,7 +74,8 @@ type Action =
   | { type: 'shop'; shop: Shop }
   | { type: 'upsertCustomer'; customer: ServerCustomer; shop?: Shop }
   | { type: 'settings'; patch: Partial<Settings> }
-  | { type: 'billNo' };
+  | { type: 'billNo' }
+  | { type: 'lastBill'; bill: SavedBill };
 
 function upsert(list: ServerCustomer[], c: ServerCustomer) {
   const i = list.findIndex(x => x.id === c.id);
@@ -106,6 +110,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, settings: { ...s.settings, ...a.patch } };
     case 'billNo':
       return { ...s, nextBillNo: s.nextBillNo + 1 };
+    case 'lastBill':
+      return { ...s, lastBill: a.bill };
   }
 }
 
@@ -298,6 +304,12 @@ function useStoreValue() {
   const updateSettings = useCallback((patch: Partial<Settings>) => dispatch({ type: 'settings', patch }), []);
 
   /** Creates the customer on the server and returns its id. */
+  /** Save a customer's mobile number (asked for when sharing an invoice). */
+  const setCustomerPhone = useCallback(async (id: string, phone: string) => {
+    const r = await api.updateCustomer(requireToken(), id, { phoneNumber: phone });
+    dispatch({ type: 'upsertCustomer', customer: r.customer });
+  }, []);
+
   const addCustomer = useCallback(async (input: { name: string; phone?: string; openingDue?: number }) => {
     const token = requireToken();
     mutations.current++;
@@ -323,6 +335,21 @@ function useStoreValue() {
     dispatch({ type: 'upsertCustomer', customer: r.customer, shop: toShop(r.shopkeeper) });
     dispatch({ type: 'billNo' });
     dispatch({ type: 'settings', patch: { lastMethod: method } });
+    const walkIn = r.customer.isWalkinCustomer;
+    dispatch({
+      type: 'lastBill',
+      bill: {
+        id: draft.id,
+        number: draft.number,
+        items: draft.items,
+        discount: draft.discount,
+        method,
+        customerName: walkIn ? null : r.customer.customerName,
+        customerId: walkIn ? null : r.customer.id,
+        customerPhone: walkIn ? null : r.customer.phoneNumber || null,
+        savedAt: Date.now(),
+      },
+    });
   }, []);
 
   const recordPayment = useCallback(async (customerId: string, amount: number, method: 'cash' | 'upi', id: string) => {
@@ -371,12 +398,13 @@ function useStoreValue() {
       updateProfile,
       updateSettings,
       addCustomer,
+      setCustomerPhone,
       saveBill,
       recordPayment,
       newDraft,
       customerById,
     }),
-    [state, customers, txns, refresh, setLanguage, onboard, chooseLanguageAgain, checkMobile, login, register, logout, updateProfile, updateSettings, addCustomer, saveBill, recordPayment, newDraft, customerById],
+    [state, customers, txns, refresh, setLanguage, onboard, chooseLanguageAgain, checkMobile, login, register, logout, updateProfile, updateSettings, addCustomer, setCustomerPhone, saveBill, recordPayment, newDraft, customerById],
   );
 }
 

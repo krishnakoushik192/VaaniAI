@@ -4,7 +4,6 @@ import { Button } from '../components/Button';
 import { ErrorBanner } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { AppHeader, Screen } from '../components/Layout';
-import { FingerprintSheet } from '../components/Sheet';
 import { T } from '../components/Text';
 import { errorText, useT } from '../i18n';
 import { formatINR } from '../logic/money';
@@ -17,8 +16,7 @@ export function CashConfirmScreen({ draft, total }: { draft: BillDraft; total: n
   const { colors } = useTheme();
   const t = useT();
   const router = useRouter();
-  const { state, saveBill, customerById } = useStore();
-  const [fp, setFp] = useState(false);
+  const { saveBill, customerById } = useStore();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ text: string; retry: () => void } | null>(null);
   const customer = customerById(draft.customerId);
@@ -46,7 +44,7 @@ export function CashConfirmScreen({ draft, total }: { draft: BillDraft; total: n
           <Button
             label={saving ? t('common.saving') : t('cash.yes')}
             disabled={saving}
-            onPress={() => (state.settings.fingerprint ? setFp(true) : commit('cash'))}
+            onPress={() => commit('cash')}
           />
           <Button
             label={customer ? t('cash.noKhata') : t('cash.noKhataNeeds')}
@@ -69,15 +67,6 @@ export function CashConfirmScreen({ draft, total }: { draft: BillDraft; total: n
           {t('cash.line', { name: customer?.name ?? t('common.walkIn'), no: draft.number })}
         </T>
       </View>
-      <FingerprintSheet
-        visible={fp}
-        onClose={() => setFp(false)}
-        amountLabel={formatINR(total)}
-        onDone={() => {
-          setFp(false);
-          commit('cash');
-        }}
-      />
     </Screen>
   );
 }

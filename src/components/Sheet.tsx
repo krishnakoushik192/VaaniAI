@@ -277,32 +277,6 @@ function CustomerOptionRow({ c, onPress }: { c: Customer; onPress: () => void })
   );
 }
 
-/** Demo fingerprint confirm. Real build: react-native-biometrics / expo-local-authentication. */
-export function FingerprintSheet({ visible, onClose, onDone, amountLabel }: { visible: boolean; onClose: () => void; onDone: () => void; amountLabel: string }) {
-  const { colors } = useTheme();
-  const t = useT();
-  return (
-    <BottomSheet visible={visible} onClose={onClose} title={t('fp.title')}>
-      <View style={styles.fp}>
-        <T variant="supporting" color={colors.ink2} style={styles.center}>
-          {t('fp.body', { amount: amountLabel })}
-        </T>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('fp.a11y')}
-          onPress={onDone}
-          style={({ pressed }) => [styles.sensor, { backgroundColor: pressed ? colors.primary : colors.primarySoft, borderColor: colors.primary }]}>
-          {({ pressed }) => <Icon name="fingerprint" size={44} color={pressed ? colors.onPrimary : colors.primary} />}
-        </Pressable>
-        <T variant="caption" color={colors.ink2}>
-          {t('fp.demo')}
-        </T>
-        <Button label={t('fp.usePin')} variant="ghost" small onPress={onDone} />
-      </View>
-    </BottomSheet>
-  );
-}
-
 /** Two answers to one question: primary + secondary, never two blues. */
 export function QuestionSheet({
   visible,

@@ -4,7 +4,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Button } from '../components/Button';
 import { ErrorBanner } from '../components/Feedback';
 import { AppHeader, Card, Screen } from '../components/Layout';
-import { FingerprintSheet, QuestionSheet } from '../components/Sheet';
+import { QuestionSheet } from '../components/Sheet';
 import { StatusChip } from '../components/StatusChip';
 import { T } from '../components/Text';
 import { errorText, useT } from '../i18n';
@@ -25,7 +25,6 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
   const { state, saveBill, customerById } = useStore();
   const [phase, setPhase] = useState<Phase>('waiting');
   const [left, setLeft] = useState(WINDOW);
-  const [fp, setFp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ text: string; retry: () => void } | null>(null);
   const customer = customerById(draft.customerId);
@@ -69,11 +68,7 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
 
   const arrived = () => {
     setPhase('waiting');
-    if (state.settings.fingerprint) {
-      setFp(true);
-    } else {
-      commit('upi');
-    }
+    commit('upi');
   };
   const showAgain = () => {
     setLeft(WINDOW);
@@ -164,15 +159,6 @@ export function PaymentQRScreen({ draft, total }: { draft: BillDraft; total: num
         no={t('pay.no')}
         onYes={arrived}
         onNo={() => setPhase('notReceived')}
-      />
-      <FingerprintSheet
-        visible={fp}
-        onClose={() => setFp(false)}
-        amountLabel={formatINR(total)}
-        onDone={() => {
-          setFp(false);
-          commit('upi');
-        }}
       />
     </Screen>
   );
