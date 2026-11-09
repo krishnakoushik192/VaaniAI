@@ -224,6 +224,9 @@ export const api = {
   addCustomer: (token: string, input: { customerName: string; phoneNumber?: string; openingDue?: number }) =>
     request<{ customer: ServerCustomer }>('/customers', { method: 'POST', token, json: input }),
 
+  updateCustomer: (token: string, id: string, patch: { phoneNumber?: string }) =>
+    request<{ customer: ServerCustomer }>(`/customers/${id}`, { method: 'PATCH', token, json: patch }),
+
   saveBill: (
     token: string,
     input: { txnId: string; customerId?: string; method: PaymentMethod; items: BillItem[]; discount: number; billNo?: string },
@@ -274,7 +277,14 @@ export type TurnItem = {
   unit: string;
   rate: number | null;
   lineAmount?: number | null;
+  usualRate?: number | null;
+  checked?: boolean; // the shopkeeper already picked this price in a "did you mean?" question
 };
+
+/** "Did you mean?": options[0] is what was heard, options[1] the likely other one. */
+export type TurnCheck =
+  | { kind: 'amount'; itemId: string; field: 'rate' | 'line'; options: [number, number] }
+  | { kind: 'customer'; options: [string, string] };
 
 export type TurnState = {
   items: TurnItem[];
@@ -282,6 +292,8 @@ export type TurnState = {
   method: PaymentMethod | null;
   discount: number;
   question: { itemId: string; field: 'qty' | 'rate' } | null;
+  check?: TurnCheck | null;
+  customerChecked?: boolean;
 };
 
 export type TurnResponse = {
@@ -299,7 +311,7 @@ export type TurnResponse = {
 /** POST /api/voice/turn: apply what the shopkeeper said (recording or typed text) to the bill. */
 export function voiceTurn(
   token: string,
-  input: { fileUri?: string; text?: string; state: TurnState | null; language: Language; readAll?: boolean },
+  input: { fileUri?: string; text?: string; choose?: 0 | 1; state: TurnState | null; language: Language; readAll?: boolean },
   signal?: AbortSignal,
 ) {
   if (input.fileUri) {
@@ -315,7 +327,7 @@ export function voiceTurn(
   return request<TurnResponse>('/voice/turn', {
     method: 'POST',
     token,
-    json: { text: input.text, state: input.state, language: input.language, readAll: !!input.readAll },
+    json: { text: input.text, choose: input.choose, state: input.state, language: input.language, readAll: !!input.readAll },
     timeoutMs: VOICE_TIMEOUT_MS,
     signal,
   });

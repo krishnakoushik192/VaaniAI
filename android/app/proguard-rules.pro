@@ -21,3 +21,10 @@
 
 # react-native-svg
 -keep public class com.horcrux.svg.** { *; }
+
+# Invoice PDF (react-native-html-to-pdf, which uses pdfbox-android) and sharing (react-native-share)
+-dontwarn com.gemalto.jp2.**
+-keep class com.tom_roush.pdfbox.** { *; }
+-keep class com.htmltopdf.** { *; }
+-keep class android.print.** { *; }
+-keep class cl.json.** { *; }

@@ -27,3 +27,7 @@ jest.mock('react-native-nitro-sound', () => {
     AudioEncoderAndroidType: { AAC: 3 },
   };
 });
+
+// Native PDF and share modules (the invoice): not available under Jest.
+jest.mock('react-native-html-to-pdf', () => ({ generatePDF: jest.fn(async () => ({ filePath: '/cache/invoice.pdf' })) }));
+jest.mock('react-native-share', () => ({ __esModule: true, default: { open: jest.fn(async () => ({ success: true })) } }));

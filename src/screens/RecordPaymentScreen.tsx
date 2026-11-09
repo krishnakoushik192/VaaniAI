@@ -6,7 +6,7 @@ import { TextField } from '../components/Form';
 import { Icon } from '../components/Icon';
 import { AppHeader, Screen } from '../components/Layout';
 import { Segmented } from '../components/Segmented';
-import { CustomerSheet, FingerprintSheet } from '../components/Sheet';
+import { CustomerSheet } from '../components/Sheet';
 import { T } from '../components/Text';
 import { errorText, useT } from '../i18n';
 import { clientId, formatINR, rupees } from '../logic/money';
@@ -18,13 +18,12 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
   const { colors } = useTheme();
   const t = useT();
   const router = useRouter();
-  const { state, customerById, recordPayment } = useStore();
+  const { customerById, recordPayment } = useStore();
   const [customerId, setCustomerId] = useState<string | null>(initialId ?? null);
   const c = customerById(customerId);
   const [amount, setAmount] = useState(c && c.balance > 0 ? String(c.balance / 100) : '');
   const [method, setMethod] = useState<'cash' | 'upi'>('cash');
   const [pickOpen, setPickOpen] = useState(!initialId);
-  const [fp, setFp] = useState(false);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,11 +60,7 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
     if (fieldError) {
       return;
     }
-    if (state.settings.fingerprint) {
-      setFp(true);
-    } else {
-      commit();
-    }
+    commit();
   };
 
   return (
@@ -157,15 +152,6 @@ export function RecordPaymentScreen({ customerId: initialId }: { customerId?: st
           setCustomerId(id);
           const picked = customerById(id);
           setAmount(picked && picked.balance > 0 ? String(picked.balance / 100) : '');
-        }}
-      />
-      <FingerprintSheet
-        visible={fp}
-        onClose={() => setFp(false)}
-        amountLabel={formatINR(paise)}
-        onDone={() => {
-          setFp(false);
-          commit();
         }}
       />
     </View>

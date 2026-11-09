@@ -113,18 +113,6 @@ export function SettingsScreen() {
         />
       </Card>
 
-      <SectionLabel>{t('set.security')}</SectionLabel>
-      <Card padded={false}>
-        <SettingRow
-          first
-          icon="fingerprint"
-          title={t('set.fingerprint')}
-          sub={t('set.fingerprintSub')}
-          toggle={settings.fingerprint}
-          onToggle={v => updateSettings({ fingerprint: v })}
-        />
-      </Card>
-
       <SectionLabel>{t('set.appearance')}</SectionLabel>
       <Card style={{ gap: space[3] }}>
         <View style={styles.inline}>
